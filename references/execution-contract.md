@@ -19,6 +19,21 @@ route_decided
 -> worker_completed
 ```
 
+An explicit `disable_luna` user policy is a separate path, not availability
+fallback:
+
+```text
+route_decided = Luna
+-> user_override=disable_luna
+-> skip availability read/probe/circuit mutation
+-> Terra Medium dispatch requested
+```
+
+Preserve existing Terra High and Sol Medium risk/architecture gates. Audit
+`availability_state_unchanged=true`, `probe_count=0`, and `fallback_count=0`.
+If `disable_luna` conflicts with `Use Luna only`, report the conflict and do
+not silently choose a fallback.
+
 `start_rejected` and `start_unknown` are not interchangeable. Only an explicit
 `start_rejected` caused by a Luna availability error may open the circuit and
 trigger Terra Medium. For `start_unknown`, inspect the child agent/session first;
@@ -91,7 +106,7 @@ These remain environment/task failures and do not justify changing models.
 
 Why Terra Medium for all three: availability fallback is not evidence that the task became riskier or more ambiguous. Terra High remains reserved for its existing risk hard gates.
 
-Use `scripts/model_availability.py` before dispatch and record every lifecycle event with `task_packet_id`, `route_decision_id`, and `dispatch_attempt_id`. Its dispatch actions are exact: `use_luna`, `probe_luna`, `use_fallback`, and `inspect_existing_probe`. The last action preserves the Luna request and prevents overlapping work; it must not request Terra.
+Use `scripts/model_availability.py` before a normal Luna dispatch and record every lifecycle event with `task_packet_id`, `route_decision_id`, and `dispatch_attempt_id`. Its normal dispatch actions are exact: `use_luna`, `probe_luna`, `use_fallback`, and `inspect_existing_probe`. A `disable_luna` override uses `user_override` and skips the controller entirely; it must not be recorded as availability fallback.
 
 A normal bounded business task is preferred as the half-open probe. If its worker already ran the exact parent validation command, record `verification_reused=true` instead of running it twice.
 

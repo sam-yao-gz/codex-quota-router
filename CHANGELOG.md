@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [1.3.1] - 2026-08-09
+
+### Added
+
+- Explicit `disable_luna` user policy with natural-language and CLI inputs.
+- Availability-state-preserving Terra/Sol routing and auditable zero probe/fallback counts.
+- Risk/architecture hard gates remain Terra High/Sol Medium when Luna is disabled.
+
+### Changed
+
+- README and execution contract now distinguish user-directed Luna bypass from model unavailability fallback.
+
 ## [1.3.0] - 2026-08-09
 
 ### Added

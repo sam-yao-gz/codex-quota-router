@@ -3,7 +3,7 @@ name: codex-quota-router
 description: Route Codex coding, debugging, review, refactor, testing, workflow, infrastructure, and codebase-analysis tasks to the cheapest viable GPT-5.6 agent. Default strongly to Luna, enforce real delegation when the parent model does not match, fall back to Terra when Luna is unavailable, and keep Sol rare. 自动为 Codex 开发任务选择并实际委派到 Luna、Terra、Sol；Luna 无法调用时自动升级 Terra。Do not use for casual Q&A or when the user explicitly pins a model.
 ---
 
-# Codex Quota Router v1.3.0 (Quota-first)
+# Codex Quota Router v1.3.1 (Quota-first)
 
 Route work before broad exploration or edits. Optimize for **successful completion per credit**, not maximum theoretical quality.
 
@@ -35,6 +35,16 @@ Use the **tight** profile unless the user says quality is more important than qu
 ### 1. Check explicit overrides
 
 If the user names a model, effort, budget mode, or says not to delegate, obey it. Do not silently override.
+
+An explicit `disable_luna` policy (for example, `这次禁用 Luna` or
+`$codex-quota-router 禁用 Luna：...`) is a user override, not a Luna
+availability failure. Skip `model_availability.py decide`, probes, and circuit
+mutation entirely. Reuse the original risk gates: ordinary Luna routes use
+Terra Medium, existing Terra High gates stay Terra High, and architecture gates
+stay Sol Medium. Audit `user_override=disable_luna`,
+`availability_state_unchanged=true`, `probe_count=0`, and `fallback_count=0`.
+If this conflicts with `Use Luna only`, report the explicit policy conflict;
+never silently fall back or label it as model unavailability.
 
 If the user says "不要子 Agent" or equivalent, this skill can only recommend a route; it cannot switch the already-running parent model. In that special case label the result as **recommended route**, never as executed model.
 

@@ -1,8 +1,14 @@
-# Codex Quota Router v1.3.0
+# Codex Quota Router v1.3.1
 
 [中文](README.md) | **English**
 
-Quota-first routing for OpenAI Codex workflows. Luna is the default; Terra is an evidence-based escalation, and Sol is reserved for rare architecture-level planning. The default concurrency is one task to one worker.
+Automatic quota-first model selection for OpenAI Codex workflows: Luna by default, Terra for risk and coupling gates, and Sol only for rare architecture planning. This reduces unnecessary high-quota calls while keeping decisions evidence-based. The default concurrency is one task to one worker.
+
+| Model | Responsibility |
+| --- | --- |
+| Luna | Default, cost-efficient execution |
+| Terra | Risk gates, hidden coupling, and availability fallback |
+| Sol | Rare architecture planning and root-cause diagnosis |
 
 ```text
 task → quota-first decision → Luna
@@ -17,7 +23,7 @@ task → quota-first decision → Luna
 - Avoids duplicate workers while preserving a bounded Luna-to-Terra availability fallback.
 - Keeps unavailable, transport/TLS, and metadata-unknown outcomes explicit instead of guessing.
 
-## v1.3.0 highlights
+## v1.3.1 highlights
 
 - 300-second half-open lease with stale-probe recovery.
 - Business-task recovery probes instead of health-only workers.
@@ -26,6 +32,8 @@ task → quota-first decision → Luna
 - Verification reuse to avoid duplicate validation work.
 - Transport/TLS failures remain distinct from model unavailability.
 - Truthful effective-model audit fields; route labels are not execution proof.
+- `disable_luna` is an explicit user policy: it skips Luna availability/circuit/probe logic and routes ordinary tasks to Terra Medium while preserving Terra High and Sol Medium hard gates.
+- Audits record `user_override=disable_luna`, `availability_state_unchanged=true`, `probe_count=0`, and `fallback_count=0`; this is not model unavailability or availability fallback. A conflict with `Use Luna only` is reported instead of silently falling back.
 
 ## Installation
 
@@ -70,6 +78,7 @@ For delegated work, inspect independent worker and runtime/session evidence befo
 
 - `Do not optimize quota` permits quality-first escalation.
 - `Use Luna only` disables availability fallback and reports a blocker if Luna cannot start.
+- `disable_luna` / `这次禁用 Luna` / `$codex-quota-router 禁用 Luna：...` skips Luna availability checks and selects Terra/Sol by the original risk gates.
 - `Route only` prints a recommendation without execution.
 - `Do not use subagents` keeps work in the current thread and labels the result as a recommendation.
 

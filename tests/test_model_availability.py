@@ -102,3 +102,13 @@ def test_audit_includes_quota_first_fields():
     fields = {"task_packet_id": "task-1", "route_decision_id": "route-1", "dispatch_attempt_id": "attempt-1", "parent_model": "gpt-5.6-luna", "route_model": "gpt-5.6-luna", "requested_model": "gpt-5.6-luna", "parent_reused": "true", "worker_count": "1", "fallback_count": "0", "probe_count": "1", "verification_reused": "true", "reasoning_escalation_count": "0"}
     record = module.audit(runtime(), "worker_started", fields)
     assert record["verification_reused"] == "true" and record["worker_count"] == "1"
+
+
+def test_disable_luna_audit_requires_unchanged_state_and_zero_counts():
+    fields = {"task_packet_id": "task-disable", "route_decision_id": "route-disable", "dispatch_attempt_id": "attempt-disable", "user_override": "disable_luna", "availability_state_unchanged": "true", "probe_count": "0", "fallback_count": "0"}
+    record = module.audit(runtime(), "dispatch_requested", fields)
+    assert record["user_override"] == "disable_luna" and record["availability_state_unchanged"] == "true"
+    bad = {"task_packet_id": "task-bad", "route_decision_id": "route-bad", "dispatch_attempt_id": "attempt-bad", "user_override": "disable_luna", "availability_state_unchanged": "false", "probe_count": "1", "fallback_count": "1"}
+    try: module.audit(runtime(), "dispatch_requested", bad)
+    except ValueError as exc: assert "availability_state_unchanged" in str(exc)
+    else: assert False

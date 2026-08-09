@@ -26,7 +26,7 @@ else:
         errors.append("frontmatter description is missing")
 
 for required_phrase in (
-    "v1.3.0 (Quota-first)",
+    "v1.3.1 (Quota-first)",
     "A route decision is not execution",
     "MUST delegate before substantive repository reads",
     "Luna cannot actually be invoked",
@@ -59,8 +59,8 @@ for rel in required:
     if not (root / rel).is_file():
         errors.append(f"missing {rel}")
 
-if (root / "VERSION").read_text(encoding="utf-8").strip() != "1.3.0":
-    errors.append("VERSION must be 1.3.0")
+if (root / "VERSION").read_text(encoding="utf-8").strip() != "1.3.1":
+    errors.append("VERSION must be 1.3.1")
 
 if tomllib:
     try:

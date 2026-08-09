@@ -146,6 +146,10 @@ def audit(runtime_dir: Path, event: str, fields: dict) -> dict:
         raise ValueError("worker_completed requires worker_result_nonce or business_result")
     if event == "start_unknown" and (fields.get("worker_result_nonce") or fields.get("business_result")):
         raise ValueError("worker output must be recorded as worker_completed, not start_unknown")
+    if fields.get("user_override") == "disable_luna":
+        unchanged = str(fields.get("availability_state_unchanged", "")).lower()
+        if unchanged != "true" or str(fields.get("probe_count", "")) != "0" or str(fields.get("fallback_count", "")) != "0":
+            raise ValueError("disable_luna audit requires availability_state_unchanged=true, probe_count=0, fallback_count=0")
     record = {"event": event, "at": fields.pop("at", int(time.time())), **fields}
     with locked(runtime_dir):
         with (runtime_dir / "dispatch_audit.jsonl").open("a", encoding="utf-8") as out:
@@ -170,7 +174,7 @@ def main() -> int:
     release.add_argument("--error")
     write = sub.add_parser("audit")
     write.add_argument("--event", required=True, choices=("route_decided", "dispatch_requested", "worker_started", "start_rejected", "start_unknown", "effective_model_verified", "metadata_unverified", "worker_completed", "probe_released"))
-    for name in ("task-packet-id", "route-decision-id", "dispatch-attempt-id", "parent-model", "route-model", "route-effort", "requested-model", "requested-effort", "effective-model", "effective-effort", "fallback-reason", "status", "worker-result-nonce", "business-result", "parent-reused", "worker-count", "fallback-count", "probe-count", "verification-reused", "reasoning-escalation-count"):
+    for name in ("task-packet-id", "route-decision-id", "dispatch-attempt-id", "parent-model", "route-model", "route-effort", "requested-model", "requested-effort", "effective-model", "effective-effort", "fallback-reason", "status", "worker-result-nonce", "business-result", "parent-reused", "worker-count", "fallback-count", "probe-count", "verification-reused", "reasoning-escalation-count", "user-override", "availability-state-unchanged"):
         write.add_argument("--" + name)
     write.add_argument("--error-kind", choices=("model_unavailable", "transport_tls", "environment", "metadata_unverified", "unknown"))
     args = parser.parse_args()
