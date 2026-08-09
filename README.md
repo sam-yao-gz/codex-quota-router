@@ -2,6 +2,8 @@
 
 [中文](README.md) | [English](README_EN.md)
 
+<p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
+
 自动为 OpenAI Codex 工作流选择合适模型：默认优先 Luna，按风险升级 Terra，架构规划才用 Sol，并减少不必要的高额度调用。默认并发为 1：一个任务交给一个 worker。
 
 | 模型 | 职责 |

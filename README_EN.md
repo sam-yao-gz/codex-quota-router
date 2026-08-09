@@ -2,6 +2,8 @@
 
 [中文](README.md) | **English**
 
+<p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
+
 Automatic quota-first model selection for OpenAI Codex workflows: Luna by default, Terra for risk and coupling gates, and Sol only for rare architecture planning. This reduces unnecessary high-quota calls while keeping decisions evidence-based. The default concurrency is one task to one worker.
 
 | Model | Responsibility |
