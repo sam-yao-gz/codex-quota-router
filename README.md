@@ -1,92 +1,84 @@
 # Codex Quota Router v1.3.0
 
-Quota-first routing for OpenAI Codex work. Luna is the default; Terra is an evidence-based escalation; Sol is rare and reserved for architecture-level planning. By default, one task is assigned to one worker.
+[中文](README.md) | [English](README_EN.md)
+
+面向 OpenAI Codex 工作流的 quota-first 路由技能。默认优先使用 Luna；只有在证据支持时才升级到 Terra，Sol 仅用于少量架构级规划。默认并发为 1：一个任务交给一个 worker。
 
 ```text
-task -> quota-first decision -> Luna
-                         | unavailable / hard gate
-                         v
-                       Terra -> (rare) Sol
+任务 → quota-first 决策 → Luna
+                         │ 不可用 / 命中硬门槛
+                         ▼
+                       Terra →（少量）Sol
 ```
 
-## Why use it
+## 为什么使用
 
-- Keeps routing decisions separate from execution and effective-model evidence.
-- Avoids unnecessary duplicate workers while preserving safe availability fallback.
-- Makes unavailable, transport/TLS, and metadata-unknown outcomes explicit instead of guessing.
+- 将路由建议、实际执行和 effective model 证据分开，避免把标签当成执行证明。
+- 避免重复 worker，同时保留有边界的 Luna → Terra 可用性回退。
+- 明确表达 unavailable、transport/TLS 和 metadata unknown，不用猜测补齐状态。
 
-## v1.3 highlights
+## 🚀 5 分钟上手
 
-- 300-second half-open lease with stale-probe recovery.
-- Business-task recovery probes instead of health-only workers.
-- Parent reuse when the current model and effort already satisfy the route.
-- Default concurrency of 1: one task, one worker.
-- Verification reuse to avoid duplicate validation work.
-- Transport/TLS failures remain distinct from model unavailability.
-- Truthful effective-model audit fields; route labels alone are not execution proof.
+### 1. 安装
 
-## Installation
-
-### Windows
+Windows：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The installer copies the skill to `%USERPROFILE%\.agents\skills\codex-quota-router`, installs six agents under `%USERPROFILE%\.codex\agents`, and backs up before updating `%USERPROFILE%\.codex\AGENTS.md`.
-
-To avoid changing the global routing file:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipGlobalAutoRouting
-```
-
-### Linux/macOS
+Linux/macOS：
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-Use `SKIP_GLOBAL_AUTO_ROUTING=1 ./install.sh` to skip the global file.
+若不希望修改全局路由文件，Windows 使用 `-SkipGlobalAutoRouting`，Linux/macOS 使用 `SKIP_GLOBAL_AUTO_ROUTING=1`。
 
-## Verification
+### 2. 重启 Codex
 
-Run the structural check:
+安装完成后重启 Codex，使 skill、agent 配置和全局指令重新加载。
+
+### 3. 正常使用
+
+直接提交普通任务即可。路由器默认 quota-first，优先选择 Luna；不需要额外命令或服务。
+
+### 4. 显式调用
+
+在任务中明确写出你的约束，例如：`Use Luna only`、`Route only` 或 `Do not use subagents`。这些约束会覆盖相应的默认行为，并如实报告无法执行的情况。
+
+### 5. 常用控制方式
+
+- `Do not optimize quota`：允许质量优先升级。
+- `Use Luna only`：禁用可用性回退，Luna 无法启动时报告阻塞。
+- `Route only`：只输出路由建议，不执行 worker。
+- `Do not use subagents`：留在当前线程，并将结果标为建议。
+
+### 6. 验证 / 卸载
+
+运行结构校验：
 
 ```bash
 python scripts/validate_skill.py
 ```
 
-Restart Codex and test with a parent model different from the selected route. Confirm an independent worker when delegation is required, and inspect runtime/session evidence before claiming an effective model. A clear Luna model/runtime rejection should create a new Terra worker; sandbox, ACL, dependency, test, and transport failures are not model-unavailable signals.
+卸载：Windows 运行 `powershell -ExecutionPolicy Bypass -File .\uninstall.ps1`；Linux/macOS 删除已安装的 skill 和 agent 文件，并在安装器修改过全局 `AGENTS.md` 时恢复备份。
 
-The deterministic scoring helper can simulate fallback:
+## v1.3.0 亮点
 
-```bash
-python scripts/route_score.py --clarity 1 --scope 2 --coupling 2 --risk 2 --novelty 1 --luna-unavailable
-```
+- 300 秒 half-open lease，并可回收过期 probe。
+- 使用业务任务 recovery probe，而不是 health-only worker。
+- 当当前模型与 effort 已满足路由时允许 parent reuse。
+- 默认并发为 1，保持一任务一 worker。
+- 复用已有验证，减少重复工作。
+- Transport/TLS 故障与模型不可用保持独立。
+- 提供真实 effective-model 审计字段；路由标签本身不是执行证据。
 
-## Common overrides
+## 设计与开发文件
 
-- “Do not optimize quota” permits quality-first escalation.
-- “Use Luna only” disables availability fallback and reports a blocker if Luna cannot start.
-- “Route only” prints a recommendation without execution.
-- “Do not use subagents” keeps work in the current thread and labels the result as a recommendation.
-
-## Uninstallation
-
-Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
-```
-
-Linux/macOS: remove the installed skill and agent files, then restore the backed-up global `AGENTS.md` if the installer changed it.
-
-## Design files
-
-- `SKILL.md` — routing, quota-first availability controller, and execution contract.
-- `references/execution-contract.md` — execution states and fallback boundaries.
-- `references/routing-policy.md` — scoring and hard gates.
-- `scripts/route_score.py` — deterministic route scoring and fallback simulation.
-- `agents/*.toml` — fixed model and effort profiles.
+- `SKILL.md`：路由、quota-first 可用性控制器和执行约定。
+- `references/execution-contract.md`：执行状态与回退边界。
+- `references/routing-policy.md`：评分与硬门槛。
+- `scripts/route_score.py`：确定性路由评分与回退模拟。
+- `agents/*.toml`：固定模型与 effort 配置。
