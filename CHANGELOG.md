@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [1.3.2] - 2026-08-25
+
+### Added
+
+- Delegated-worker recursion guard: descendants are denied by default and deeper delegation is reported to the parent as blocked/escalation.
+
 ## [1.3.1] - 2026-08-09
 
 ### Added

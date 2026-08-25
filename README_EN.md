@@ -1,4 +1,6 @@
-# Codex Quota Router v1.3.1
+# Codex Quota Router v1.3.2
+
+Delegated workers cannot dispatch descendants by default; deeper delegation returns a blocked/escalation result to the parent without creating another worker.
 
 [中文](README.md) | **English**
 

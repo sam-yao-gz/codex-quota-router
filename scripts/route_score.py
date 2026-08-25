@@ -51,6 +51,34 @@ def parent_compatibility(parent_model: str | None, parent_effort: str | None, ta
     return {"parent_model": parent_model, "parent_effort": parent_effort, "same_model": same_model, "parent_reused": reuse_parent}
 
 
+def child_dispatch_decision(delegated_worker: bool = False, allow_descendant: bool = False) -> dict:
+    """Guard descendant dispatch from a delegated worker.
+
+    Top-level routing remains available. A worker that needs deeper delegation
+    must return the blocked result to its parent for escalation instead of
+    creating an overlapping descendant worker.
+    """
+    if delegated_worker and not allow_descendant:
+        return {
+            "dispatch_allowed": False,
+            "dispatch_action": "child_dispatch_denied",
+            "status": "blocked",
+            "escalation_required": True,
+            "reason": "delegated workers must complete the assigned packet in their own thread; report deeper delegation to the parent",
+        }
+    return {
+        "dispatch_allowed": True,
+        "dispatch_action": "dispatch_requested",
+        "status": "dispatch_requested",
+        "escalation_required": False,
+        "reason": None,
+    }
+
+
+# Descriptive alias for callers that refer to the boundary as nested dispatch.
+nested_dispatch_decision = child_dispatch_decision
+
+
 def choose_route(clarity: int, scope: int, coupling: int, risk: int, novelty: int, failed_attempts: int, flags: set[str]) -> Route:
     bounded("clarity", clarity, 0, 2); bounded("scope", scope, 0, 3); bounded("coupling", coupling, 0, 3)
     bounded("risk", risk, 0, 4); bounded("novelty", novelty, 0, 2); bounded("failed_attempts", failed_attempts, 0, 2)
@@ -91,8 +119,13 @@ def availability_decision(runtime_dir: str | None, now: int | None, force_probe:
     return {"runtime_dir": str(directory), "state": state, "decision": decide(state, int(time.time()) if now is None else now, force_probe, DEFAULT_PROBE_LEASE if probe_lease is None else probe_lease)}
 
 
-def dispatch_decision(route: Route, availability: dict | None, luna_unavailable: bool, disable_luna: bool = False, use_luna_only: bool = False) -> tuple[Route, str, str | None]:
+def dispatch_decision(route: Route, availability: dict | None, luna_unavailable: bool, disable_luna: bool = False, use_luna_only: bool = False, *, delegated_worker: bool = False, worker_context: bool | None = None, allow_descendant: bool = False) -> tuple[Route, str, str | None]:
     """Keep dispatch action and requested model coherent; transport/inspection never silently fall back."""
+    if worker_context is not None:
+        delegated_worker = worker_context
+    child_guard = child_dispatch_decision(delegated_worker, allow_descendant)
+    if not child_guard["dispatch_allowed"]:
+        return route, child_guard["dispatch_action"], child_guard["reason"]
     if disable_luna and use_luna_only:
         raise ValueError("conflicting user policies: disable_luna and Use Luna only")
     if disable_luna:
@@ -121,6 +154,7 @@ def main() -> int:
     parser.add_argument("--user-input", "--prompt", help="documented natural-language user policy input")
     parser.add_argument("--runtime-dir"); parser.add_argument("--now", type=int); parser.add_argument("--probe-lease", type=int)
     parser.add_argument("--parent-model"); parser.add_argument("--parent-effort", choices=tuple(EFFORT_ORDER))
+    parser.add_argument("--delegated-worker", "--worker-context", dest="delegated_worker", action="store_true", help="deny descendant dispatch from a delegated worker")
     args = parser.parse_args()
     try:
         flags = set(args.flag)
@@ -128,12 +162,16 @@ def main() -> int:
         disable_luna = bool(args.disable_luna or detected_disable)
         route = choose_route(args.clarity, args.scope, args.coupling, args.risk, args.novelty, args.failed_attempts, flags)
         # A disable-luna policy must not read or mutate the availability controller.
-        availability = None if disable_luna else availability_decision(args.runtime_dir, args.now, args.luna_available, args.probe_lease)
-        requested, dispatch_action, fallback_reason = dispatch_decision(route, availability, args.luna_unavailable, disable_luna, use_luna_only)
+        child_guard = child_dispatch_decision(args.delegated_worker)
+        # A denied descendant cannot dispatch, so it must not consult the Luna
+        # availability controller or accidentally create a probe/fallback.
+        availability = None if disable_luna or not child_guard["dispatch_allowed"] else availability_decision(args.runtime_dir, args.now, args.luna_available, args.probe_lease)
+        requested, dispatch_action, fallback_reason = dispatch_decision(route, availability, args.luna_unavailable, disable_luna, use_luna_only, delegated_worker=args.delegated_worker)
     except ValueError as exc:
         parser.error(str(exc))
     result = asdict(requested)
-    result.update({"route_agent": route.agent, "route_model": route.model, "route_effort": route.effort, "requested_model": requested.model, "requested_effort": requested.effort, "effective_model": None, "effective_effort": None, "dispatch_action": dispatch_action, "fallback_reason": fallback_reason, "availability": availability, "user_override": "disable_luna" if disable_luna else None, "availability_state_unchanged": bool(disable_luna), "probe_count": 0 if disable_luna else None, "fallback_count": 0 if disable_luna else None, **parent_compatibility(args.parent_model, args.parent_effort, requested)})
+    child_guard = child_dispatch_decision(args.delegated_worker)
+    result.update({"route_agent": route.agent, "route_model": route.model, "route_effort": route.effort, "requested_model": requested.model, "requested_effort": requested.effort, "effective_model": None, "effective_effort": None, "dispatch_action": dispatch_action, "fallback_reason": fallback_reason, "availability": availability, "user_override": "disable_luna" if disable_luna else None, "availability_state_unchanged": bool(disable_luna), "probe_count": 0 if disable_luna else None, "fallback_count": 0 if disable_luna else None, "dispatch_allowed": child_guard["dispatch_allowed"], "status": child_guard["status"] if not child_guard["dispatch_allowed"] else "route_decided", "escalation_required": child_guard["escalation_required"], **parent_compatibility(args.parent_model, args.parent_effort, requested)})
     print(json.dumps(result, ensure_ascii=False, indent=2)); return 0
 
 

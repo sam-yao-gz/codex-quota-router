@@ -1,4 +1,6 @@
-# Codex Quota Router v1.3.1
+# Codex Quota Router v1.3.2
+
+委派 worker 默认不得再派生 descendant；若需要更深委派，会以 blocked/escalation 返回父线程，不创建第二个 worker。
 
 [中文](README.md) | [English](README_EN.md)
 

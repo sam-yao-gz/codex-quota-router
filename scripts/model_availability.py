@@ -146,6 +146,15 @@ def audit(runtime_dir: Path, event: str, fields: dict) -> dict:
         raise ValueError("worker_completed requires worker_result_nonce or business_result")
     if event == "start_unknown" and (fields.get("worker_result_nonce") or fields.get("business_result")):
         raise ValueError("worker output must be recorded as worker_completed, not start_unknown")
+    if event == "child_dispatch_denied":
+        if str(fields.get("status", "")).lower() != "blocked":
+            raise ValueError("child_dispatch_denied requires status=blocked")
+        if str(fields.get("dispatch_allowed", "")).lower() != "false":
+            raise ValueError("child_dispatch_denied requires dispatch_allowed=false")
+        if str(fields.get("escalation_required", "")).lower() != "true":
+            raise ValueError("child_dispatch_denied requires escalation_required=true")
+        if str(fields.get("worker_count", "0")) != "0":
+            raise ValueError("child_dispatch_denied requires worker_count=0")
     if fields.get("user_override") == "disable_luna":
         unchanged = str(fields.get("availability_state_unchanged", "")).lower()
         if unchanged != "true" or str(fields.get("probe_count", "")) != "0" or str(fields.get("fallback_count", "")) != "0":
@@ -173,8 +182,8 @@ def main() -> int:
     release = sub.add_parser("release-probe")
     release.add_argument("--error")
     write = sub.add_parser("audit")
-    write.add_argument("--event", required=True, choices=("route_decided", "dispatch_requested", "worker_started", "start_rejected", "start_unknown", "effective_model_verified", "metadata_unverified", "worker_completed", "probe_released"))
-    for name in ("task-packet-id", "route-decision-id", "dispatch-attempt-id", "parent-model", "route-model", "route-effort", "requested-model", "requested-effort", "effective-model", "effective-effort", "fallback-reason", "status", "worker-result-nonce", "business-result", "parent-reused", "worker-count", "fallback-count", "probe-count", "verification-reused", "reasoning-escalation-count", "user-override", "availability-state-unchanged"):
+    write.add_argument("--event", required=True, choices=("route_decided", "dispatch_requested", "child_dispatch_denied", "worker_started", "start_rejected", "start_unknown", "effective_model_verified", "metadata_unverified", "worker_completed", "probe_released"))
+    for name in ("task-packet-id", "route-decision-id", "dispatch-attempt-id", "parent-model", "route-model", "route-effort", "requested-model", "requested-effort", "effective-model", "effective-effort", "fallback-reason", "reason", "status", "dispatch-allowed", "escalation-required", "worker-result-nonce", "business-result", "parent-reused", "worker-count", "fallback-count", "probe-count", "verification-reused", "reasoning-escalation-count", "user-override", "availability-state-unchanged"):
         write.add_argument("--" + name)
     write.add_argument("--error-kind", choices=("model_unavailable", "transport_tls", "environment", "metadata_unverified", "unknown"))
     args = parser.parse_args()

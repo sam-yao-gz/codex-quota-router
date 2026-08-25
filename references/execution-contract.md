@@ -42,6 +42,17 @@ produce overlapping writes.
 
 A worker that returns a nonce or business result is `worker_completed`, whether or not effective-model metadata can be inspected. Record `metadata_unverified` separately; never turn this case into `start_unknown`.
 
+## Delegated-worker recursion guard
+
+The top-level parent may dispatch one bounded worker, but a delegated worker
+must not dispatch a descendant by default. It completes the assigned packet in
+its own thread. If deeper delegation would be required, stop and report to the
+parent using a blocked/escalation result: `dispatch_allowed=false`,
+`status=blocked`, `escalation_required=true`, and `worker_count=0`. This is a
+task-boundary result, not Luna unavailability, so it must not trigger Terra
+fallback or a second worker. Top-level routing and explicit user overrides
+remain unchanged.
+
 Luna availability failure inserts exactly one bounded fallback:
 
 ```text

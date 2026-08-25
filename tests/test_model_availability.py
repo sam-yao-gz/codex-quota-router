@@ -112,3 +112,18 @@ def test_disable_luna_audit_requires_unchanged_state_and_zero_counts():
     try: module.audit(runtime(), "dispatch_requested", bad)
     except ValueError as exc: assert "availability_state_unchanged" in str(exc)
     else: assert False
+
+
+def test_child_dispatch_denied_audit_requires_blocked_truthful_zero_worker_state():
+    fields = {"task_packet_id": "task-child", "route_decision_id": "route-child", "dispatch_attempt_id": "attempt-child", "status": "blocked", "dispatch_allowed": "false", "escalation_required": "true", "worker_count": "0", "reason": "deeper delegation required"}
+    record = module.audit(runtime(), "child_dispatch_denied", fields)
+    assert record["event"] == "child_dispatch_denied" and record["worker_count"] == "0"
+    for bad in (
+        {**fields, "status": "dispatch_requested"},
+        {**fields, "dispatch_allowed": "true"},
+        {**fields, "escalation_required": "false"},
+        {**fields, "worker_count": "1"},
+    ):
+        try: module.audit(runtime(), "child_dispatch_denied", bad)
+        except ValueError: pass
+        else: assert False

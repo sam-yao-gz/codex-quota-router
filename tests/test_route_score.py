@@ -44,6 +44,33 @@ def test_parent_cross_model_never_reuses_parent():
     assert not module.parent_compatibility("gpt-5.6-terra", "high", target)["parent_reused"]
 
 
+def test_delegated_worker_cannot_dispatch_descendant_by_default():
+    decision = module.child_dispatch_decision(delegated_worker=True)
+    assert decision["dispatch_allowed"] is False
+    assert decision["dispatch_action"] == "child_dispatch_denied"
+    assert decision["status"] == "blocked" and decision["escalation_required"] is True
+    route = module.choose_route(0, 0, 0, 0, 0, 0, set())
+    requested, action, reason = module.dispatch_decision(route, None, False, delegated_worker=True)
+    assert requested == route and action == "child_dispatch_denied" and "parent" in reason
+
+
+def test_top_level_dispatch_and_explicit_overrides_remain_available():
+    route = module.choose_route(0, 0, 0, 0, 0, 0, set())
+    allowed = module.child_dispatch_decision(delegated_worker=False)
+    assert allowed["dispatch_allowed"] is True
+    requested, action, _ = module.dispatch_decision(route, {"decision": {"action": "use_luna"}}, False)
+    assert requested == route and action == "use_luna"
+    disabled, action, _ = module.dispatch_decision(route, None, False, disable_luna=True)
+    assert disabled.model == "gpt-5.6-terra" and action == "user_override"
+
+
+def test_cli_nested_dispatch_denial_is_truthful_and_does_not_probe():
+    result, _ = route_cli("--delegated-worker", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
+    assert result["dispatch_action"] == "child_dispatch_denied"
+    assert result["dispatch_allowed"] is False and result["status"] == "blocked"
+    assert result["escalation_required"] is True and result["availability"] is None
+
+
 def test_active_open_uses_fallback_with_coherent_action():
     _, runtime = route_cli("--clarity", "1", "--scope", "2", "--coupling", "2", "--risk", "2", "--novelty", "1")
     availability = MODULE_PATH.parent / "model_availability.py"

@@ -3,7 +3,7 @@ name: codex-quota-router
 description: Route Codex coding, debugging, review, refactor, testing, workflow, infrastructure, and codebase-analysis tasks to the cheapest viable GPT-5.6 agent. Default strongly to Luna, enforce real delegation when the parent model does not match, fall back to Terra when Luna is unavailable, and keep Sol rare. 自动为 Codex 开发任务选择并实际委派到 Luna、Terra、Sol；Luna 无法调用时自动升级 Terra。Do not use for casual Q&A or when the user explicitly pins a model.
 ---
 
-# Codex Quota Router v1.3.1 (Quota-first)
+# Codex Quota Router v1.3.2 (Quota-first)
 
 Route work before broad exploration or edits. Optimize for **successful completion per credit**, not maximum theoretical quality.
 
@@ -20,6 +20,7 @@ Route work before broad exploration or edits. Optimize for **successful completi
 9. Use at most one worker subagent by default. A second read-only Luna helper is permitted only when its scope is independent, it materially reduces main-thread context, and the parent records why one worker cannot cover it.
 10. Never run parallel write agents on overlapping files.
 11. Do not scan the whole repository before routing. Use the request, repository instructions, `git status`, and at most three clearly relevant files to classify the task.
+12. A delegated worker must not dispatch descendants by default. It completes the assigned packet in its own thread; if deeper delegation is required, report `blocked` with escalation to the parent.
 
 ## Default budget profile
 
@@ -122,6 +123,17 @@ Suggested direct settings:
 - Sol Medium: `gpt-5.6-sol`, `medium`
 
 The parent remains responsible for task-packet construction, integration, conflict resolution, and final verification, but must not impersonate the selected worker.
+
+#### Delegated-worker recursion guard
+
+The top-level parent may dispatch the selected worker, but a delegated worker
+does not acquire permission to dispatch another worker. The worker must finish
+the bounded packet in its own thread. If the packet cannot be completed without
+deeper delegation, return a blocked/escalation result to the parent with
+`dispatch_allowed=false`, `status=blocked`, `escalation_required=true`, and
+`worker_count=0`; do not create a descendant or reinterpret the result as Luna
+availability failure. This guard does not alter top-level routing, parent reuse,
+`disable_luna`, `Use Luna only`, or the Luna-to-Terra availability fallback.
 
 ### 7. Runtime verification and truthful status
 
