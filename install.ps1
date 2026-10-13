@@ -13,6 +13,10 @@ $GlobalAgentsFile = Join-Path $CodexHome "AGENTS.md"
 
 function Copy-DirectoryClean {
     param([string]$Source, [string]$Destination)
+    if ([System.IO.Path]::GetFullPath($Source).TrimEnd('\') -eq [System.IO.Path]::GetFullPath($Destination).TrimEnd('\')) {
+        Write-Host "Skill already at canonical path; preserving in-place checkout"
+        return
+    }
     if (Test-Path $Destination) {
         if (-not $Force) {
             $backup = "$Destination.backup.$(Get-Date -Format 'yyyyMMddHHmmss')"
@@ -31,10 +35,14 @@ New-Item -ItemType Directory -Path $CodexHome -Force | Out-Null
 
 Copy-DirectoryClean -Source $SourceRoot -Destination $SkillTarget
 Copy-Item (Join-Path $SourceRoot "agents\*.toml") $AgentTarget -Force
+@("terra-resolver.toml", "terra-guard.toml") | ForEach-Object {
+    $legacy = Join-Path $AgentTarget $_
+    if (Test-Path $legacy) { Remove-Item $legacy -Force }
+}
 
 if (-not $SkipGlobalAutoRouting) {
-    $begin = '<!-- BEGIN CODEX_LUNA_FIRST_ROUTER -->'
-    $end = '<!-- END CODEX_LUNA_FIRST_ROUTER -->'
+    $begin = '<!-- BEGIN CODEX_QUOTA_ROUTER -->'
+    $end = '<!-- END CODEX_QUOTA_ROUTER -->'
     $block = Get-Content (Join-Path $SourceRoot "snippets\AGENTS.global.md") -Raw
     $existing = if (Test-Path $GlobalAgentsFile) { Get-Content $GlobalAgentsFile -Raw } else { "" }
 
@@ -42,7 +50,7 @@ if (-not $SkipGlobalAutoRouting) {
         Copy-Item $GlobalAgentsFile "$GlobalAgentsFile.backup.$(Get-Date -Format 'yyyyMMddHHmmss')" -Force
     }
 
-    $pattern = "(?s)" + [regex]::Escape($begin) + ".*?" + [regex]::Escape($end)
+    $pattern = '(?s)<!-- BEGIN CODEX_(?:LUNA_FIRST_ROUTER|QUOTA_ROUTER) -->.*?<!-- END CODEX_(?:LUNA_FIRST_ROUTER|QUOTA_ROUTER) -->'
     if ($existing -match $pattern) {
         $updated = [regex]::Replace($existing, $pattern, $block.Trim())
     } else {

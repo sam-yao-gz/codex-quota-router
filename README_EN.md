@@ -1,4 +1,4 @@
-# Codex Quota Router v1.3.2
+# Codex Quota Router 1.4.2-local
 
 Delegated workers cannot dispatch descendants by default; deeper delegation returns a blocked/escalation result to the parent without creating another worker.
 
@@ -6,38 +6,35 @@ Delegated workers cannot dispatch descendants by default; deeper delegation retu
 
 <p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
 
-Automatic quota-first model selection for OpenAI Codex workflows: Luna by default, Terra for risk and coupling gates, and Sol only for rare architecture planning. This reduces unnecessary high-quota calls while keeping decisions evidence-based. The default concurrency is one task to one worker.
+Quota-aware model routing recommendations for OpenAI Codex workflows: GPT-6 Luna by default, GPT-6.1 Sol for risk and coupling gates, and GPT-6 Astra only for rare architecture planning. A route recommendation does not switch the running thread's model and is not proof that the recommended model executed.
 
 | Model | Responsibility |
 | --- | --- |
 | Luna | Default, cost-efficient execution |
-| Terra | Risk gates, hidden coupling, and availability fallback |
-| Sol | Rare architecture planning and root-cause diagnosis |
+| Sol | Risk gates, hidden coupling, and reasoning escalation |
+| Astra | Rare architecture planning and root-cause diagnosis |
 
 ```text
 task → quota-first decision → Luna
-                             │ unavailable / hard gate
+                             │ risk / complexity gate
                              ▼
-                           Terra → (rare) Sol
+                           Sol → (rare) Astra
 ```
 
 ## Why use it
 
 - Separates routing recommendations, execution, and effective-model evidence.
-- Avoids duplicate workers while preserving a bounded Luna-to-Terra availability fallback.
-- Keeps unavailable, transport/TLS, and metadata-unknown outcomes explicit instead of guessing.
+- Selects Sol only for risk/complexity gates or explicit user preference, never because Luna failed to start.
+- Separates route recommendation, requested route, and runtime evidence; Luna execution failures are blockers.
 
-## v1.3.1 highlights
+## Key behavior
 
-- 300-second half-open lease with stale-probe recovery.
-- Business-task recovery probes instead of health-only workers.
-- Parent reuse when the current model and effort already satisfy the route.
-- Default concurrency of one task and one worker.
+- Opt-in lightweight parent reuse only for adequate-effort parents and explicitly bounded tasks; hard risks and explicit model/effort choices are excluded.
+- Worker counts follow independent workload, usually 0 for Low, 0-1 for Mid, and 0-2 for High, rather than fixed quotas.
 - Verification reuse to avoid duplicate validation work.
-- Transport/TLS failures remain distinct from model unavailability.
 - Truthful effective-model audit fields; route labels are not execution proof.
-- `disable_luna` is an explicit user policy: it skips Luna availability/circuit/probe logic and routes ordinary tasks to Terra Medium while preserving Terra High and Sol Medium hard gates.
-- Audits record `user_override=disable_luna`, `availability_state_unchanged=true`, `probe_count=0`, and `fallback_count=0`; this is not model unavailability or availability fallback. A conflict with `Use Luna only` is reported instead of silently falling back.
+- Luna start or execution failure is reported as a blocker, with no automatic Sol reassignment.
+- `disable_luna` is an explicit user preference for Sol on ordinary work; Sol High and Astra gates remain intact.
 
 ## Installation
 
@@ -70,19 +67,19 @@ Run the structural check:
 python scripts/validate_skill.py
 ```
 
-The deterministic scoring helper can simulate fallback:
+The deterministic helper prints the selected route:
 
 ```bash
-python scripts/route_score.py --clarity 1 --scope 2 --coupling 2 --risk 2 --novelty 1 --luna-unavailable
+python scripts/route_score.py --clarity 1 --scope 2 --coupling 2 --risk 2 --novelty 1
 ```
 
-For delegated work, inspect independent worker and runtime/session evidence before claiming an effective model. A clear Luna runtime rejection may create a Terra worker; sandbox, ACL, dependency, test, and transport failures are not model-unavailable signals.
+For delegated work, inspect worker and runtime/session evidence before claiming an effective model. If the selected route cannot execute, report the blocker; do not reassign based on model availability.
 
 ## Common overrides
 
 - `Do not optimize quota` permits quality-first escalation.
-- `Use Luna only` disables availability fallback and reports a blocker if Luna cannot start.
-- `disable_luna` / `这次禁用 Luna` / `$codex-quota-router 禁用 Luna：...` skips Luna availability checks and selects Terra/Sol by the original risk gates.
+- `Use Luna only` preserves Luna preference; if a risk gate requires another model, report the conflict.
+- `disable_luna` / `这次禁用 Luna` / `$codex-quota-router 禁用 Luna：...` explicitly prefers Sol for ordinary tasks while preserving Sol High/Astra gates.
 - `Route only` prints a recommendation without execution.
 - `Do not use subagents` keeps work in the current thread and labels the result as a recommendation.
 
@@ -98,8 +95,8 @@ Linux/macOS: remove the installed skill and agent files, then restore the backed
 
 ## Design files
 
-- `SKILL.md` — routing, quota-first availability controller, and execution contract.
-- `references/execution-contract.md` — execution states and fallback boundaries.
+- `SKILL.md` — routing and execution contract.
+- `references/execution-contract.md` — execution states and blocker handling.
 - `references/routing-policy.md` — scoring and hard gates.
-- `scripts/route_score.py` — deterministic route scoring and fallback simulation.
+- `scripts/route_score.py` — deterministic route scoring and direct-reuse decisions.
 - `agents/*.toml` — fixed model and effort profiles.

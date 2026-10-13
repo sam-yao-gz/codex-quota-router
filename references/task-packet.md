@@ -1,43 +1,15 @@
-# Bounded task packet template
+# Delegation packet
 
-Use this template when delegating.
+Use only when delegation is warranted by the selected workflow, risk, or meaningful independent work. Keep it short and bounded.
 
 ```text
-Requested route:
-- agent: <luna_fast | luna_worker | luna_deep | terra_resolver | terra_guard | sol_architect>
-- model: <exact model id>
-- reasoning effort: <low | medium | high>
-
-Goal:
-<one concrete outcome>
-
-Scope:
-- Allowed files/directories: <paths or narrow search boundary>
-- Do not change: <explicit exclusions>
-
-Known context:
-- <relevant behavior, error, prior decision>
-
-Acceptance criteria:
-1. <observable result>
-2. <observable result>
-
-Validation:
-- <commands/tests>
-
-Return:
-- Worker/agent identity
-- Requested model + effort
-- Effective model + effort if runtime evidence is accessible; otherwise explicitly say unverified
-- Summary of root cause or implementation
-- Files changed
-- Validation results
-- Remaining risks/blockers
+Route: <agent, exact model, effort>
+Goal: <observable outcome>
+Scope: <allowed files/search boundary; prohibited changes>
+Context: <relevant behavior and invariants>
+Acceptance: <observable checks>
+Validation: <focused commands>
+Return: files changed, concrete test results, runtime model evidence or unverified status, remaining risks
 ```
 
-Rules:
-
-- Keep one owner for overlapping writes.
-- Ask the worker to stop if scope must expand materially.
-- Do not paste whole repositories or huge logs into the parent thread.
-- Prefer exact file references and concise evidence.
+Give each child exact scope, dependencies, deliverables, and acceptance criteria. Reuse parent discovery; do not ask workers to repeat scans. One active writer per file. Join and inspect required results before integration. Do not send credentials or unnecessary logs.

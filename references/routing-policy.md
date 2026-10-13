@@ -1,112 +1,41 @@
-# Luna-first routing policy
+# Routing policy
 
-This policy intentionally accepts a small increase in retry risk to preserve quota. The default should remain Luna unless evidence justifies an upgrade.
+Choose the least expensive route that can safely complete the task. Honor an explicit user model, effort, or workflow. The six existing profiles remain fixed: Luna Low/Medium/High, Sol Medium/High, and Astra Medium.
 
-## Score dimensions
+## Score
 
-### Clarity
-
-- 0: Exact target and acceptance criteria are known.
-- 1: One material detail must be inferred from nearby code.
-- 2: Desired behavior, ownership, or success criteria are ambiguous.
-
-### Scope
-
-- 0: Text-only or one tiny file.
-- 1: One to five related files.
-- 2: Six to fifteen files or one subsystem.
-- 3: More than fifteen files or repository-wide change.
-
-File count is weak evidence. Repetitive changes can still use Luna.
-
-### Coupling
-
-- 0: Isolated edit.
-- 1: One module or clear call path.
-- 2: Multiple modules or frontend/backend interaction.
-- 3: Multiple services, storage systems, queues, external platforms, or unclear ownership.
-
-### Risk
-
-- 0: Docs, comments, formatting, generated artifacts.
-- 1: Normal reversible code change.
-- 2: User-visible behavior or externally consumed API.
-- 3: Data integrity, auth, deployment, production availability, concurrency, or rollback concerns.
-- 4: Plausible irreversible loss, security exposure, financial impact, or outage amplification.
-
-### Novelty
-
-- 0: Existing local pattern can be copied.
-- 1: New local pattern or unfamiliar dependency.
-- 2: New architecture, undocumented behavior, or uncertain external semantics.
-
-### Failed focused attempts
-
-- 0: None.
-- 1: One competent, bounded attempt failed for a reasoning-related cause.
-- 2: Two competent attempts failed or produced contradictory diagnoses.
-
-Do not count environment, dependency, permission, or unrelated test failures.
-
-## Tight-profile thresholds
-
-Total the dimensions.
+Score clarity (0-2), scope (0-3), coupling (0-3), risk (0-4), novelty (0-2), and reasoning-related failed attempts (0-2). Do not count dependency, permission, environment, or unrelated test failures.
 
 - 0-2: Luna Low
 - 3-6: Luna Medium
 - 7-10: Luna High
-- 11-13: Terra Medium
-- 14+: Terra High
+- 11-13: Sol Medium
+- 14+: Sol High
 
-The thresholds already favor Luna. Do not add an additional “just in case” upgrade.
+File count is weak evidence; repetitive edits may stay on Luna. Use the score helper for borderline/auditable cases, not obvious routes.
 
 ## Hard gates
 
-### Force at least Terra Medium
+- Sol Medium: hidden cross-module ownership/state, cache invalidation or idempotency semantics, intermittent behavior, or evidence-backed reasoning escalation.
+- Sol High: migration/schema/data integrity, authentication/authorization, payments, concurrency, destructive or production changes, credentials/secrets, unknown deletion, plausible data loss/security exposure.
+- Astra Medium: rare, read-only planning/diagnosis for a multi-system architecture choice or unresolved high-impact root cause. Return a bounded plan; route isolated implementation back to Luna when suitable.
 
-- cache invalidation or idempotency across requests;
-- intermittent state-dependent bug;
-- cross-module behavior with unclear source of truth;
-- one failed focused Luna High attempt caused by incorrect reasoning.
+Do not infer hidden ownership from file count. When evidence exposes cross-system ownership, data integrity, security, concurrency, or architecture decisions beyond the task boundary, stop and return the evidence for escalation.
 
-### Force at least Terra High
+## Lightweight parent reuse
 
-- data/schema migration;
-- authentication or authorization;
-- payment or billing behavior;
-- race condition, locking, transaction isolation, or distributed consistency;
-- destructive filesystem/database operation;
-- production incident fix or rollback plan;
-- plausible data loss or security exposure.
+This is opt-in and avoids dispatch overhead for a genuinely small task. It changes execution, not the recommendation: keep `route_*` as selected and report the current parent in `requested_*`; do not claim the recommended model executed.
 
-### Use Sol Medium for planning/diagnosis
+Ordinary eligibility is limited to a Luna recommendation and a GPT-6 Luna or GPT-6.1 Sol parent with adequate effort, plus either a known maximum of 0-2 changed files or one established read-only/reversible command. This cannot bypass score-based Sol escalation. It is denied by exact model/effort requests, Luna-only policy, delegated-worker context, unsupported parent models, or risk flags/gates. Without the opt-in and boundedness evidence, legacy routing is unchanged.
 
-Use only when at least one condition holds:
+One narrow deletion exception is permitted: user-authorized cache cleanup recommended as Sol High, using an established command and prevalidated whitelist, with reparse-point traversal disabled and locked files skipped. Supply the `cache`, `cache_cleanup`, and `destructive` flags plus `--validated-cache-cleanup`; the flag asserts those safeguards and does not waive them. Unknown recursive deletion, migrations, credentials, auth, production changes, or other high-risk work never qualifies.
 
-- architecture choice affects several systems and has multiple viable designs;
-- Terra produced no coherent root cause after a competent attempt;
-- a high-impact change cannot be safely decomposed without first resolving fundamental uncertainty.
+## Coordination budget
 
-Sol should return a bounded plan, invariants, file boundaries, and verification criteria. Implementation then routes downward.
+Worker counts are workload guidance, not targets: Low usually 0, Mid usually 0-1, High usually 0-2. Use more only for independent work that saves time/context and fits client limits. Avoid overlapping writers and routine duplicate reviewers. Reuse concrete validation results.
 
-## Budget rules
+Archive children through official APIs only. Wrapper archival is optional maintenance requiring exact official pairing and all safety gates. Missing wrapper metadata is a note, not a task blocker.
 
-- Default concurrency: one worker.
-- A second Luna read-only worker requires all of: independent scope, no overlapping writes, a documented reason it reduces parent context, and an explicit parent decision.
-- Maximum reasoning by default: High.
-- Sol default effort: Medium.
-- No Ultra, Pro, XHigh, or Max unless the user explicitly requests a quality-first override.
-- Never repeat full repository scans. Reuse summaries and target lists.
-- Keep raw logs in worker threads; return distilled evidence to the parent.
+## Execution failure
 
-## Availability fallback is not a complexity escalation
-
-If a selected Luna worker cannot be started because the Luna model/runtime is unavailable, reuse the same bounded task packet with `terra_resolver` / Terra Medium. Do not add score or reinterpret the task as more risky merely because Luna is unavailable.
-
-A missing registered Luna profile alone is not enough: try explicit Luna model+effort delegation first. Sandbox, permission, dependency, test, or project-service failures are environment/task failures and do not trigger this fallback.
-
-## Quota-first dispatch and reuse
-
-The route scorer returns exactly one action: `use_luna`, `probe_luna`, `use_fallback`, or `inspect_existing_probe`. `probe_luna` always requests Luna, so no result can combine a probe action with requested Terra. A transport/TLS result stops and is audited; it is neither a Luna availability rejection nor a fallback trigger.
-
-Parent reuse is a pure compatibility rule: same model plus parent effort greater than or equal to target effort may reuse the parent. Cross-model paths always delegate. A high-effort same-model parent therefore may perform a medium- or low-effort target without spawning another worker.
+There is no availability preflight or automatic model fallback. If the selected Luna route cannot start or execute, report a blocker. Sol selection must come from its risk/complexity gate or an explicit user `disable_luna` preference, never solely from Luna being unavailable.

@@ -12,7 +12,8 @@ from pathlib import Path
 
 DEFAULT_COOLDOWN = 1800
 DEFAULT_PROBE_LEASE = 300
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+LUNA_MODEL = "gpt-6-luna"
 
 MODEL_UNAVAILABLE_MARKERS = (
     "model unavailable", "model is unavailable", "model not available",
@@ -37,11 +38,11 @@ def classify_error(error: str | None) -> str:
 
 
 def default_runtime_dir() -> Path:
-    return Path(os.environ.get("USERPROFILE", str(Path.home()))) / ".codex" / "runtime" / "codex-quota-router"
+    return Path(os.environ.get("USERPROFILE", str(Path.home()))) / ".codex" / "runtime" / "codex-quota-router" / LUNA_MODEL
 
 
 def initial_state() -> dict:
-    return {"schema_version": SCHEMA_VERSION, "luna": {
+    return {"schema_version": SCHEMA_VERSION, "model": LUNA_MODEL, "luna": {
         "circuit_state": "closed", "status": "unknown", "failure_count": 0,
         "last_error": None, "last_checked_at": None, "unavailable_until": None,
         "probe_started_at": None,
@@ -77,7 +78,9 @@ def load_state(runtime_dir: Path) -> dict:
         return initial_state()
     data = json.loads(path.read_text(encoding="utf-8"))
     base = initial_state()
-    # v1 state had status=available. Preserve it rather than inferring a new result.
+    # A prior model's circuit cannot decide availability for the new Luna.
+    if data.get("model") != LUNA_MODEL:
+        return base
     base["luna"].update(data.get("luna", {}))
     return base
 
@@ -97,7 +100,7 @@ def atomic_json(path: Path, data: dict) -> None:
 
 
 def decide(state: dict, now: int, force_probe: bool = False, probe_lease: int = DEFAULT_PROBE_LEASE) -> dict:
-    """Return one unambiguous dispatcher action; this function never selects Terra for a live probe."""
+    """Return one unambiguous dispatcher action; this function never selects Sol for a live probe."""
     luna = state["luna"]
     circuit = luna["circuit_state"]
     if circuit == "half_open":
