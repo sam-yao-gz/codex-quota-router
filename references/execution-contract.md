@@ -1,161 +1,17 @@
 # Execution contract
 
-This file closes the gap between **route selection** and **actual model execution**.
+## Honor explicit choices
 
-## Core invariant
+Honor explicit model, effort, and workflow constraints. A route recommendation is not execution evidence. Do not turn an exact model/effort request into cross-model reuse or a different workflow. `disable_luna` is an explicit user preference: ordinary Luna routes map to Sol Medium while existing Sol High/Astra gates remain. A conflict with Luna-only is reported, not silently resolved.
 
-A routing label is not proof of execution.
+## Direct execution and dispatch
 
-If the parent thread is not running the selected model, substantive work must be delegated before the parent continues. For the same model, a parent with equal or higher reasoning effort may set `parent_reused=true`; lower effort must delegate.
+The current parent may execute when its model and effort satisfy the selected route. Optional lightweight reuse is opt-in and ordinarily limited to a Luna recommendation, supported GPT-6 Luna/Sol parent, adequate effort, and known scope (at most two files or one established read-only/reversible command). It cannot bypass score-based Sol escalation. Hard risks and exact overrides fail closed. The narrow Sol High cache-cleanup exception requires user authorization, a prevalidated whitelist, no reparse-point traversal, and locked files skipped. Delegated workers cannot dispatch descendants.
 
-## State machine
+Select the chosen route and follow the user's workflow. There is no availability preflight, circuit, probe, unknown-start ceremony, or automatic Sol fallback. If Luna cannot start or execution fails, report a blocker; do not imply another model ran or reassign solely because of that failure. Sol remains available for its risk/complexity gates and explicit `disable_luna`; Astra is rare bounded planning.
 
-```text
-route_decided
--> task_packet_built
--> dispatch_requested
--> worker_started
--> effective_model_verified (when runtime evidence is accessible)
--> worker_completed
-```
+## Execution evidence
 
-An explicit `disable_luna` user policy is a separate path, not availability
-fallback:
+Keep recommendation, dispatch, runtime verification, and completion distinct. A direct parent reuse has `dispatch_action=direct_parent_reuse`, `parent_reused=true`, and the current parent in `requested_*`; keep the recommendation in `route_*`. `effective_*` stays unset without runtime evidence. For a worker, report the requested route and actual outcome separately. Missing runtime model metadata is unverified, not proof that another model executed.
 
-```text
-route_decided = Luna
--> user_override=disable_luna
--> skip availability read/probe/circuit mutation
--> Terra Medium dispatch requested
-```
-
-Preserve existing Terra High and Sol Medium risk/architecture gates. Audit
-`availability_state_unchanged=true`, `probe_count=0`, and `fallback_count=0`.
-If `disable_luna` conflicts with `Use Luna only`, report the conflict and do
-not silently choose a fallback.
-
-`start_rejected` and `start_unknown` are not interchangeable. Only an explicit
-`start_rejected` caused by a Luna availability error may open the circuit and
-trigger Terra Medium. For `start_unknown`, inspect the child agent/session first;
-do not start Terra, because the original worker may already be running and could
-produce overlapping writes.
-
-A worker that returns a nonce or business result is `worker_completed`, whether or not effective-model metadata can be inspected. Record `metadata_unverified` separately; never turn this case into `start_unknown`.
-
-## Delegated-worker recursion guard
-
-The top-level parent may dispatch one bounded worker, but a delegated worker
-must not dispatch a descendant by default. It completes the assigned packet in
-its own thread. If deeper delegation would be required, stop and report to the
-parent using a blocked/escalation result: `dispatch_allowed=false`,
-`status=blocked`, `escalation_required=true`, and `worker_count=0`. This is a
-task-boundary result, not Luna unavailability, so it must not trigger Terra
-fallback or a second worker. Top-level routing and explicit user overrides
-remain unchanged.
-
-Luna availability failure inserts exactly one bounded fallback:
-
-```text
-route_decided = Luna
--> Luna dispatch requested
--> Luna runtime unavailable
--> reuse same task packet
--> Terra Medium dispatch requested
--> worker_started
--> effective_model_verified (when accessible)
--> worker_completed
-```
-
-## Parent-thread permissions after route_decided
-
-When parent != selected model/effort, the parent may only:
-
-- construct/refine the bounded task packet;
-- invoke the selected custom agent or explicit subagent;
-- inspect delegation/runtime metadata;
-- integrate the returned result;
-- run final verification when appropriate.
-
-It must not perform the selected worker's repository exploration, implementation, debugging, or tests before dispatch.
-
-## Dispatch precedence
-
-1. Registered custom agent for the selected route.
-2. Explicit native subagent with exact `model` and `model_reasoning_effort` if the profile is missing/unregistered.
-3. If and only if Luna itself cannot be invoked, `terra_resolver` / `gpt-5.6-terra` / `medium` with the same task packet. A transport/TLS failure stops for inspection; it does not fall back.
-4. Stop if Terra fallback is also unavailable.
-
-A missing custom-agent TOML registration alone is **not** proof that Luna is unavailable; explicit Luna spawning must be attempted first when the runtime supports it.
-
-## What counts as Luna unavailable
-
-Acceptable evidence includes a Luna invocation returning an error equivalent to:
-
-- model unavailable / unsupported / not allowed;
-- model-specific quota/capacity prevents starting the Luna worker;
-- Luna worker cannot be created after both registered-agent and explicit-Luna invocation paths are exhausted.
-
-Not Luna availability failures:
-
-- sandbox setup/refresh failure;
-- filesystem ACL/permission/locked file;
-- missing compiler/interpreter/dependency;
-- unit/integration test failure;
-- repository or external service network failure;
-- malformed command/task input;
-- business-logic failure after Luna successfully started.
-
-These remain environment/task failures and do not justify changing models.
-
-## Availability fallback mapping
-
-| Original route | Availability fallback |
-|---|---|
-| Luna Low | Terra Medium (`terra_resolver`) |
-| Luna Medium | Terra Medium (`terra_resolver`) |
-| Luna High | Terra Medium (`terra_resolver`) |
-
-Why Terra Medium for all three: availability fallback is not evidence that the task became riskier or more ambiguous. Terra High remains reserved for its existing risk hard gates.
-
-Use `scripts/model_availability.py` before a normal Luna dispatch and record every lifecycle event with `task_packet_id`, `route_decision_id`, and `dispatch_attempt_id`. Its normal dispatch actions are exact: `use_luna`, `probe_luna`, `use_fallback`, and `inspect_existing_probe`. A `disable_luna` override uses `user_override` and skips the controller entirely; it must not be recorded as availability fallback.
-
-A normal bounded business task is preferred as the half-open probe. If its worker already ran the exact parent validation command, record `verification_reused=true` instead of running it twice.
-
-## Truthful user-visible status
-
-Use wording that matches the strongest evidence available:
-
-- Decision only: `[路由建议] Luna High`
-- Dispatch requested: `[执行请求] Luna High｜worker=luna_deep｜实际模型待核验`
-- Runtime verified: `[实际执行] Luna High｜effective_model=gpt-5.6-luna｜effort=high`
-- Fallback requested/verified: `[回退执行] Terra Medium｜原因：Luna runtime unavailable`
-
-Do not infer `effective_model` from the selected route, agent name, or TOML configuration. Prefer runtime/session `turn_context`, child-thread metadata, or equivalent execution evidence.
-
-## Failure handling examples
-
-### Registered agent missing
-
-```text
-luna_deep not registered
--> try explicit subagent model=gpt-5.6-luna effort=high
--> if Luna starts: continue Luna
--> if Luna invocation says unavailable: Terra Medium fallback
-```
-
-### Windows sandbox error before/around edit
-
-```text
-windows sandbox failed: helper_unknown_error
-```
-
-This is an environment failure, not Luna unavailability. Keep the selected route and report/block according to normal retry policy.
-
-### Luna capacity/quota rejects worker start
-
-```text
-Luna dispatch -> model/capacity rejection
--> same task packet -> terra_resolver
-```
-
-Do not rescan or rewrite the packet just because the model changed.
+Use worker counts based on useful independent work, not targets. Keep one writer per file, reuse concrete validation, and avoid duplicate reviewers. Join required workers before integration. Archive children through official APIs; wrapper archival is optional maintenance requiring exact official pairing and all safety checks. Missing wrapper metadata is nonblocking. Never emulate archival through database, edge, or rollout changes.

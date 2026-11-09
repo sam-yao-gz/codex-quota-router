@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## [1.4.0] - 2026-10-08
+
+### Changed
+
+- Route Luna work to GPT-6 Luna, Sol fallback/risk work to GPT-6.1 Sol, and architecture planning to GPT-6 Astra.
+- Scope availability state to GPT-6 Luna, migrate managed agent profiles and global marker handling, and preserve an in-place skill checkout during installation.
+
 ## [1.3.2] - 2026-08-25
 
 ### Added
@@ -13,8 +20,8 @@ All notable changes to this project are documented here.
 ### Added
 
 - Explicit `disable_luna` user policy with natural-language and CLI inputs.
-- Availability-state-preserving Terra/Sol routing and auditable zero probe/fallback counts.
-- Risk/architecture hard gates remain Terra High/Sol Medium when Luna is disabled.
+- Availability-state-preserving Sol/Astra routing and auditable zero probe/fallback counts.
+- Risk/architecture hard gates remain Sol High/Astra Medium when Luna is disabled.
 
 ### Changed
 
@@ -24,7 +31,7 @@ All notable changes to this project are documented here.
 
 ### Added
 
-- Quota-first Luna default with Terra escalation and rare Sol planning.
+- Quota-first Luna default with Sol escalation and rare Astra planning.
 - 300-second half-open lease and stale recovery for availability probes.
 - Business-task recovery probes, parent reuse, single-worker default, and verification reuse.
 - Explicit separation of transport/TLS failures from model unavailability.

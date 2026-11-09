@@ -1,4 +1,4 @@
-# Codex Quota Router v1.3.2
+# Codex Quota Router 1.4.2-local
 
 委派 worker 默认不得再派生 descendant；若需要更深委派，会以 blocked/escalation 返回父线程，不创建第二个 worker。
 
@@ -6,26 +6,26 @@
 
 <p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
 
-自动为 OpenAI Codex 工作流选择合适模型：默认优先 Luna，按风险升级 Terra，架构规划才用 Sol，并减少不必要的高额度调用。默认并发为 1：一个任务交给一个 worker。
+为 OpenAI Codex 工作流提供模型路由建议：默认优先 GPT-6 Luna，按风险建议 GPT-6.1 Sol，架构规划才考虑 GPT-6 Astra。路由建议不代表当前线程可切换模型，也不代表模型已经执行。
 
 | 模型 | 职责 |
 | --- | --- |
 | Luna | 默认的低额度、高性价比执行 |
-| Terra | 风险硬门槛、隐藏耦合与可用性回退 |
-| Sol | 少量架构级规划与根因诊断 |
+| Sol | 风险硬门槛、隐藏耦合与推理升级 |
+| Astra | 少量架构级规划与根因诊断 |
 
 ```text
 任务 → quota-first 决策 → Luna
-                         │ 不可用 / 命中硬门槛
+                         │ 风险 / 复杂度门槛
                          ▼
-                       Terra →（少量）Sol
+                       Sol →（少量）Astra
 ```
 
 ## 为什么使用
 
 - 将路由建议、实际执行和 effective model 证据分开，避免把标签当成执行证明。
-- 避免重复 worker，同时保留有边界的 Luna → Terra 可用性回退。
-- 明确表达 unavailable、transport/TLS 和 metadata unknown，不用猜测补齐状态。
+- 只按风险、复杂度和用户明确偏好升级到 Sol，不根据 Luna 启动失败自动换模。
+- 将推荐路由、实际请求与运行时证据分开；Luna 执行失败时报告阻塞。
 
 ## 🚀 5 分钟上手
 
@@ -61,8 +61,8 @@ chmod +x install.sh
 ### 5. 常用控制方式
 
 - `Do not optimize quota`：允许质量优先升级。
-- `Use Luna only`：禁用可用性回退，Luna 无法启动时报告阻塞。
-- `disable_luna`（或“这次禁用 Luna”）：跳过 Luna 可用性检查、probe 与 circuit，按原风险路由到 Terra/Sol。
+- `Use Luna only`：坚持 Luna 路由；风险门槛要求其他模型时报告冲突。
+- `disable_luna`（或“这次禁用 Luna”）：显式偏好 Sol；普通任务使用 Sol Medium，风险和架构门槛仍适用。
 - `Route only`：只输出路由建议，不执行 worker。
 - `Do not use subagents`：留在当前线程，并将结果标为建议。
 
@@ -76,23 +76,21 @@ python scripts/validate_skill.py
 
 卸载：Windows 运行 `powershell -ExecutionPolicy Bypass -File .\uninstall.ps1`；Linux/macOS 删除已安装的 skill 和 agent 文件，并在安装器修改过全局 `AGENTS.md` 时恢复备份。
 
-## v1.3.1 亮点
+## 主要行为
 
-- 300 秒 half-open lease，并可回收过期 probe。
-- 使用业务任务 recovery probe，而不是 health-only worker。
-- 当当前模型与 effort 已满足路由时允许 parent reuse。
-- 默认并发为 1，保持一任务一 worker。
+- 仅在显式 opt-in、父线程 effort 足够且任务明确限于两文件或一个已知安全命令时，允许轻量 parent reuse；高风险和显式模型/effort 约束除外。
+- Worker 数量按独立工作量决定，不设固定配额；通常 Low 为 0、Mid 为 0-1、High 为 0-2。
 - 复用已有验证，减少重复工作。
-- Transport/TLS 故障与模型不可用保持独立。
 - 提供真实 effective-model 审计字段；路由标签本身不是执行证据。
-- `disable_luna` 是独立的显式用户策略：跳过 Luna availability/circuit/probe，普通任务转 Terra Medium；风险和架构硬门槛仍分别使用 Terra High/Sol Medium。
+- Luna 无法启动或执行时报告阻塞，不自动分配 Sol。
+- `disable_luna` 是独立的显式用户偏好：普通任务转 Sol Medium；风险和架构硬门槛仍分别使用 Sol High/Astra Medium。
 
-审计会记录 `user_override=disable_luna`、`availability_state_unchanged=true`、`probe_count=0`、`fallback_count=0`；它不是模型不可用或 availability fallback。若与 `Use Luna only` 冲突，会报告冲突，不静默回退。
+若 `disable_luna` 与 `Use Luna only` 冲突，会报告冲突，不静默改选。
 
 ## 设计与开发文件
 
-- `SKILL.md`：路由、quota-first 可用性控制器和执行约定。
-- `references/execution-contract.md`：执行状态与回退边界。
+- `SKILL.md`：路由和执行约定。
+- `references/execution-contract.md`：执行状态与失败处理。
 - `references/routing-policy.md`：评分与硬门槛。
-- `scripts/route_score.py`：确定性路由评分与回退模拟。
+- `scripts/route_score.py`：确定性路由评分与直接复用决策。
 - `agents/*.toml`：固定模型与 effort 配置。

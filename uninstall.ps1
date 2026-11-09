@@ -14,6 +14,8 @@ if (Test-Path $SkillTarget) {
     "luna-fast.toml",
     "luna-worker.toml",
     "luna-deep.toml",
+    "sol-resolver.toml",
+    "sol-guard.toml",
     "terra-resolver.toml",
     "terra-guard.toml",
     "sol-architect.toml"
@@ -23,10 +25,10 @@ if (Test-Path $SkillTarget) {
 }
 
 if (Test-Path $GlobalAgentsFile) {
-    $begin = '<!-- BEGIN CODEX_LUNA_FIRST_ROUTER -->'
-    $end = '<!-- END CODEX_LUNA_FIRST_ROUTER -->'
+    $begin = '<!-- BEGIN CODEX_QUOTA_ROUTER -->'
+    $end = '<!-- END CODEX_QUOTA_ROUTER -->'
     $content = Get-Content $GlobalAgentsFile -Raw
-    $pattern = "(?s)\s*" + [regex]::Escape($begin) + ".*?" + [regex]::Escape($end) + "\s*"
+    $pattern = '(?s)\s*<!-- BEGIN CODEX_(?:LUNA_FIRST_ROUTER|QUOTA_ROUTER) -->.*?<!-- END CODEX_(?:LUNA_FIRST_ROUTER|QUOTA_ROUTER) -->\s*'
     $updated = [regex]::Replace($content, $pattern, "`r`n`r`n").Trim()
     Set-Content -Path $GlobalAgentsFile -Value ($updated + "`r`n") -Encoding UTF8
 }

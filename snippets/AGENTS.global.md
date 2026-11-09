@@ -1,12 +1,11 @@
-<!-- BEGIN CODEX_LUNA_FIRST_ROUTER -->
-## Luna-first automatic model routing
+<!-- BEGIN CODEX_QUOTA_ROUTER -->
+## GPT-6 quota-aware routing
 
-- For every substantive implementation, debugging, refactor, code review, testing, workflow, infrastructure, or codebase-analysis task, invoke `$codex-quota-router` before broad repository reads or edits.
-- A routing label is not execution. If the selected model/effort differs from the current parent, **delegate before substantive work** and do not let the parent continue the selected worker's task.
-- Default strongly to Luna. Prefer the registered Luna agent; if the profile is unavailable, explicitly request a Luna subagent with the exact model/effort.
-- If Luna itself cannot be invoked because the Luna model/runtime is unavailable, reuse the same bounded packet and fall back to Terra Medium. Do not classify sandbox, ACL, dependency, test, or project-service failures as Luna unavailability.
-- Before Luna dispatch, use `scripts/model_availability.py` to read/decide the persistent circuit. Open circuits dispatch Terra Medium; cooldown expiry permits exactly one half-open probe. Record `start_rejected` separately from `start_unknown`: only explicit availability rejection may fall back, while unknown starts require child/session inspection before any Terra dispatch.
-- Never claim “Luna executed” without runtime/session evidence; when effective model cannot be inspected, say it is unverified.
-- Keep Sol rare and primarily for bounded architecture/root-cause planning.
-- Do not bypass an explicit model or reasoning choice from the user.
-<!-- END CODEX_LUNA_FIRST_ROUTER -->
+- Honor explicit model, effort, and workflow choices. A route recommendation is not execution evidence; report the model that actually ran, or mark it unverified.
+- Default to GPT-6 Luna for bounded work; use GPT-6.1 Sol Medium for hidden coupling/escalation and Sol High for data, auth/security, concurrency, destructive, or production risk. Keep Astra rare for bounded architecture planning.
+- Direct execution by the current parent is acceptable when its effort and the user's workflow permit. Opt-in lightweight reuse ordinarily applies only to Luna recommendations with a GPT-6 Luna/Sol parent, adequate effort, and tasks bounded to at most two files or one established read-only/reversible command; it cannot bypass score-based Sol escalation. Exact model/effort, Luna-only, delegated-worker, and hard-risk cases are excluded. The Sol High cache-cleanup exception retains authorization, whitelist, no-reparse traversal, and locked-file safeguards.
+- If the selected Luna route cannot start or execution fails, report a blocker. Do not run availability preflights/probes or automatically reassign to Sol; Sol is selected only by risk/complexity gates or an explicit user preference.
+- Workers are demand-based (Low usually 0, Mid 0-1, High 0-2), not quotas. Delegate only for meaningful independent savings within client limits; keep one writer per file and reuse validation.
+- Archive children only through official APIs. Wrapper archival is optional maintenance requiring exact official pairing and every safety check; missing metadata is nonblocking. Never edit databases or rollout files to emulate archival.
+- In an actual project, read its root `AGENTS.md` first; use `E:\guanwang\个人工作代理\START_HERE.md` only when the project root is unconfirmed or work is cross-project.
+<!-- END CODEX_QUOTA_ROUTER -->
