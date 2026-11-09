@@ -26,11 +26,14 @@ else:
         errors.append("frontmatter description is missing")
 
 for required_phrase in (
-    "Codex Quota Router 1.4.2-local",
+    "Codex Quota Router 1.5.0",
     "Recommended routes are not proof of execution",
     "Lightweight reuse is opt-in",
     "runtime evidence",
     "execution failure is a blocker",
+    "quality_first",
+    "route_only",
+    "decision_id",
 ):
     if required_phrase.lower() not in text.lower():
         errors.append(f"SKILL.md missing execution invariant: {required_phrase}")
@@ -71,8 +74,22 @@ for obsolete in ("model_availability.py", "--luna-unavailable", "--luna-availabl
     if obsolete in active_text:
         errors.append(f"active router references retired availability policy: {obsolete}")
 
-if (root / "VERSION").read_text(encoding="utf-8").strip() != "1.4.2-local":
-    errors.append("VERSION must be 1.4.2-local")
+if (root / "VERSION").read_text(encoding="utf-8").strip() != "1.5.0":
+    errors.append("VERSION must be 1.5.0")
+
+for path in (
+    skill,
+    root / "references" / "routing-policy.md",
+    root / "references" / "execution-contract.md",
+    root / "references" / "scenarios.md",
+    root / "README.md",
+    root / "README_EN.md",
+    root / "snippets" / "AGENTS.global.md",
+):
+    body = path.read_text(encoding="utf-8").lower()
+    for obsolete in ("disable_luna", "use luna only", "use_luna_only"):
+        if obsolete in body:
+            errors.append(f"{path.relative_to(root)} contains retired policy: {obsolete}")
 
 if tomllib:
     try:

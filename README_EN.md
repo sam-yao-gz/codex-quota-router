@@ -1,40 +1,34 @@
-# Codex Quota Router 1.4.2-local
-
-Delegated workers cannot dispatch descendants by default; deeper delegation returns a blocked/escalation result to the parent without creating another worker.
+# Codex Quota Router 1.5.0
 
 [中文](README.md) | **English**
 
 <p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
 
-Quota-aware model routing recommendations for OpenAI Codex workflows: GPT-6 Luna by default, GPT-6.1 Sol for risk and coupling gates, and GPT-6 Astra only for rare architecture planning. A route recommendation does not switch the running thread's model and is not proof that the recommended model executed.
+Auditable model-routing recommendations for OpenAI Codex workflows: GPT-6 Luna by task, GPT-6.1 Sol for risk gates and hidden coupling, and GPT-6 Astra for rare read-only architecture planning. A recommendation does not switch the running thread's model or prove that the target model executed.
 
 | Model | Responsibility |
 | --- | --- |
-| Luna | Default, cost-efficient execution |
-| Sol | Risk gates, hidden coupling, and reasoning escalation |
-| Astra | Rare architecture planning and root-cause diagnosis |
+| Luna | Default execution at Low, Medium, or High effort as the task requires |
+| Sol | High-risk gates, hidden coupling, and reasoning escalation |
+| Astra | Rare read-only architecture planning and root-cause diagnosis |
 
-```text
-task → quota-first decision → Luna
-                             │ risk / complexity gate
-                             ▼
-                           Sol → (rare) Astra
-```
+## Policies
 
-## Why use it
+- `balanced` (default): use score bands and hard risk gates to select the least expensive adequate route.
+- `quality_first`: promote ordinary routes by one tier; preserve Sol High risk gates and the read-only Astra architecture role.
+- `route_only`: return a recommendation and audit record without dispatching a worker.
+- `subagents=auto|allow|deny`: control delegation separately; with `deny`, execute directly only if the current parent satisfies the selected route.
+- Honor explicit model and effort choices. Validate effort against each model's capabilities; reject unknown models, combinations, and flags rather than silently downgrading. If an exact choice conflicts with a Sol High hard-risk gate, return a conflict instead of weakening the gate.
 
-- Separates routing recommendations, execution, and effective-model evidence.
-- Selects Sol only for risk/complexity gates or explicit user preference, never because Luna failed to start.
-- Separates route recommendation, requested route, and runtime evidence; Luna execution failures are blockers.
+Explicit effort levels exposed by the current Codex host:
 
-## Key behavior
+| Model | Supported effort |
+| --- | --- |
+| `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 
-- Opt-in lightweight parent reuse only for adequate-effort parents and explicitly bounded tasks; hard risks and explicit model/effort choices are excluded.
-- Worker counts follow independent workload, usually 0 for Low, 0-1 for Mid, and 0-2 for High, rather than fixed quotas.
-- Verification reuse to avoid duplicate validation work.
-- Truthful effective-model audit fields; route labels are not execution proof.
-- Luna start or execution failure is reported as a blocker, with no automatic Sol reassignment.
-- `disable_luna` is an explicit user preference for Sol on ordinary work; Sol High and Astra gates remain intact.
+Default routing continues to use the six installed agent profiles. Higher explicit effort applies only when the execution mechanism supports and actually passes it through.
 
 ## Installation
 
@@ -44,11 +38,7 @@ task → quota-first decision → Luna
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-To avoid changing the global routing file:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1 -SkipGlobalAutoRouting
-```
+Use `-SkipGlobalAutoRouting` to avoid changing the global routing file.
 
 ### Linux/macOS
 
@@ -61,27 +51,12 @@ Use `SKIP_GLOBAL_AUTO_ROUTING=1 ./install.sh` to skip the global file. Restart C
 
 ## Validation
 
-Run the structural check:
-
 ```bash
 python scripts/validate_skill.py
+python scripts/run_tests.py
 ```
 
-The deterministic helper prints the selected route:
-
-```bash
-python scripts/route_score.py --clarity 1 --scope 2 --coupling 2 --risk 2 --novelty 1
-```
-
-For delegated work, inspect worker and runtime/session evidence before claiming an effective model. If the selected route cannot execute, report the blocker; do not reassign based on model availability.
-
-## Common overrides
-
-- `Do not optimize quota` permits quality-first escalation.
-- `Use Luna only` preserves Luna preference; if a risk gate requires another model, report the conflict.
-- `disable_luna` / `这次禁用 Luna` / `$codex-quota-router 禁用 Luna：...` explicitly prefers Sol for ordinary tasks while preserving Sol High/Astra gates.
-- `Route only` prints a recommendation without execution.
-- `Do not use subagents` keeps work in the current thread and labels the result as a recommendation.
+The score helper returns route and audit data; it does not dispatch a worker or prove model execution. Set effective model/effort only with runtime evidence. Only reasoning and logic failures increase the route score. Dependency, permission, test, network, and user-input blockers are recorded by kind and do not trigger model escalation.
 
 ## Uninstallation
 
@@ -97,6 +72,6 @@ Linux/macOS: remove the installed skill and agent files, then restore the backed
 
 - `SKILL.md` — routing and execution contract.
 - `references/execution-contract.md` — execution states and blocker handling.
-- `references/routing-policy.md` — scoring and hard gates.
-- `scripts/route_score.py` — deterministic route scoring and direct-reuse decisions.
-- `agents/*.toml` — fixed model and effort profiles.
+- `references/routing-policy.md` — policies, score bands, effort levels, and risk gates.
+- `scripts/route_score.py` — deterministic route scoring and policy validation.
+- `agents/*.toml` — the six default model/effort profiles.

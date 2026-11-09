@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [1.5.0] - 2026-11-09
+
+### Added
+
+- Explicit balanced, quality-first, and route-only policy modes plus a separate subagent preference.
+- Model-specific validation for explicit effort levels and unknown model/flag rejection.
+- Typed failure records that count only reasoning/logic failures toward escalation, with decision audit fields.
+
+### Changed
+
+- Sol High risk gates now take priority over Astra architecture planning.
+- Removed the retired Luna-disable and Luna-only preferences.
+- Kept the six installed agent profiles unchanged; quality-first promotes ordinary routes through those profiles.
+
 ## [1.4.0] - 2026-10-08
 
 ### Changed

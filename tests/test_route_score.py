@@ -5,165 +5,350 @@ import json
 import subprocess
 import sys
 import tomllib
+import uuid
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "route_score.py"
 spec = importlib.util.spec_from_file_location("route_score", MODULE_PATH)
-module = importlib.util.module_from_spec(spec); assert spec and spec.loader
-sys.modules[spec.name] = module; spec.loader.exec_module(module)
+module = importlib.util.module_from_spec(spec)
+assert spec and spec.loader
+sys.modules[spec.name] = module
+spec.loader.exec_module(module)
 
 
-def route(values, flags=()): return module.choose_route(*values, set(flags)).agent
+def route(values, flags=(), failures=()):
+    return module.choose_route(*values, list(failures), set(flags))
+
+
 def route_cli(*args):
-    result = subprocess.run([sys.executable, str(MODULE_PATH), *args], capture_output=True, text=True, check=True)
+    result = subprocess.run(
+        [sys.executable, str(MODULE_PATH), *args],
+        capture_output=True, text=True, check=True,
+    )
     return json.loads(result.stdout)
 
 
-def test_mechanical(): assert route((0, 0, 0, 0, 0, 0)) == "luna_fast"
-def test_default_feature(): assert route((0, 1, 1, 1, 0, 0)) == "luna_worker"
-def test_bounded_multifile(): assert route((1, 2, 2, 2, 1, 0)) == "luna_deep"
-def test_idempotency_gate(): assert route((1, 1, 2, 2, 1, 0), {"idempotency"}) == "sol_resolver"
-def test_migration_gate(): assert route((0, 1, 1, 2, 0, 0), {"migration"}) == "sol_guard"
-def test_architecture_gate(): assert route((2, 3, 3, 3, 2, 0), {"architecture"}) == "sol_architect"
+def cli_error(*args):
+    return subprocess.run(
+        [sys.executable, str(MODULE_PATH), *args],
+        capture_output=True, text=True,
+    )
+
+
+BASE_ARGS = ("--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
+
+
+def test_balanced_routes_preserve_existing_score_bands():
+    assert route((0, 0, 0, 0, 0)).agent == "luna_fast"
+    assert route((0, 1, 1, 1, 0)).agent == "luna_worker"
+    assert route((1, 2, 2, 2, 0)).agent == "luna_deep"
+    assert route((2, 3, 3, 3, 0)).agent == "sol_resolver"
+
+
+def test_risk_gates_and_architecture_gate_order():
+    selected = route((2, 3, 3, 3, 2), {"architecture"})
+    assert (selected.agent, selected.model, selected.effort) == ("sol_architect", "gpt-6-astra", "medium")
+
+    critical = route((2, 3, 3, 4, 2), {"architecture", "migration"})
+    assert (critical.agent, critical.model, critical.effort) == ("sol_guard", "gpt-6.1-sol", "high")
+
+    explicit_luna = cli_error(
+        "--explicit-model", "gpt-6-luna", "--flag", "migration", *BASE_ARGS,
+    )
+    assert explicit_luna.returncode != 0
+    assert "conflicts with Sol High hard-risk gate" in explicit_luna.stderr
+    explicit_sol_low = cli_error(
+        "--explicit-model", "gpt-6.1-sol", "--explicit-effort", "low",
+        "--flag", "migration", *BASE_ARGS,
+    )
+    assert explicit_sol_low.returncode != 0
+    explicit_sol_high = route_cli(
+        "--explicit-model", "gpt-6.1-sol", "--explicit-effort", "high",
+        "--flag", "migration", *BASE_ARGS,
+    )
+    assert explicit_sol_high["requested_model"] == "gpt-6.1-sol"
+    assert explicit_sol_high["requested_effort"] == "high"
 
 
 def test_sensitive_and_unknown_deletion_flags_select_sol_high():
-    flags = ("production_change", "credentials", "credential", "secrets", "secret", "unknown_deletion", "recursive_delete", "unknown_recursive_delete")
+    flags = (
+        "production_change", "credentials", "credential", "secrets", "secret",
+        "unknown_deletion", "recursive_delete", "unknown_recursive_delete",
+    )
     for flag in flags:
-        selected = module.choose_route(0, 0, 0, 0, 0, 0, {flag})
+        selected = route((0, 0, 0, 0, 0), {flag})
         assert (selected.agent, selected.model, selected.effort) == ("sol_guard", "gpt-6.1-sol", "high")
 
 
 def test_profile_models_match_every_active_route():
     cases = [
-        ((0, 0, 0, 0, 0, 0), set()),
-        ((0, 1, 1, 1, 0, 0), set()),
-        ((1, 2, 2, 2, 1, 0), set()),
-        ((1, 1, 2, 2, 1, 0), {"idempotency"}),
-        ((0, 1, 1, 2, 0, 0), {"migration"}),
-        ((2, 3, 3, 3, 2, 0), {"architecture"}),
+        ((0, 0, 0, 0, 0), set()),
+        ((0, 1, 1, 1, 0), set()),
+        ((1, 2, 2, 2, 0), set()),
+        ((1, 1, 2, 2, 1), {"idempotency"}),
+        ((0, 1, 1, 2, 0), {"migration"}),
+        ((2, 3, 3, 3, 2), {"architecture"}),
     ]
-    expected = {"gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"}
+    expected_models = {"gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"}
     for values, flags in cases:
-        selected = module.choose_route(*values, flags)
+        selected = route(values, flags)
         profile = MODULE_PATH.parents[1] / "agents" / (selected.agent.replace("_", "-") + ".toml")
         data = tomllib.loads(profile.read_text(encoding="utf-8"))
-        assert (data["name"], data["model"], data["model_reasoning_effort"]) == (selected.agent, selected.model, selected.effort)
-        assert selected.model in expected
+        assert (data["name"], data["model"], data["model_reasoning_effort"]) == (
+            selected.agent, selected.model, selected.effort,
+        )
+        assert selected.model in expected_models
 
 
-def test_luna_route_has_no_availability_state_or_preflight_fields():
-    result = route_cli("--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert result["route_model"] == result["requested_model"] == "gpt-6-luna"
-    assert result["dispatch_action"] == "use_selected"
-    assert not ({"availability", "probe_count", "fallback_count", "fallback_reason", "availability_state_unchanged"} & result.keys())
+def test_quality_first_promotes_each_ordinary_route_once():
+    cases = [
+        ((0, 0, 0, 0, 0), ("luna_worker", "gpt-6-luna", "medium")),
+        ((0, 1, 1, 1, 0), ("luna_deep", "gpt-6-luna", "high")),
+        ((1, 2, 2, 2, 0), ("sol_resolver", "gpt-6.1-sol", "medium")),
+        ((2, 3, 3, 3, 0), ("sol_guard", "gpt-6.1-sol", "high")),
+    ]
+    for values, expected in cases:
+        selected = module.apply_quality_first(route(values))
+        assert (selected.agent, selected.model, selected.effort) == expected
 
 
-def test_route_score_runs_when_availability_controller_import_is_blocked():
-    guard = """
-import builtins, runpy, sys
-real_import = builtins.__import__
-def deny_controller(name, *args, **kwargs):
-    if name == "model_availability":
-        raise ImportError("controller intentionally unavailable")
-    return real_import(name, *args, **kwargs)
-builtins.__import__ = deny_controller
-script, *args = sys.argv[1:]
-sys.argv = [script, *args]
-runpy.run_path(script, run_name="__main__")
-"""
-    result = subprocess.run([sys.executable, "-c", guard, str(MODULE_PATH), "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0"], capture_output=True, text=True, check=True)
-    assert json.loads(result.stdout)["requested_model"] == "gpt-6-luna"
+def test_quality_first_preserves_sol_high_and_astra_planning_routes():
+    critical = route((0, 0, 0, 4, 0), {"migration"})
+    architecture = route((2, 3, 3, 3, 2), {"architecture"})
+    assert module.apply_quality_first(critical) == critical
+    assert module.apply_quality_first(architecture) == architecture
 
 
-def test_removed_availability_cli_flags_are_not_accepted():
-    help_result = subprocess.run([sys.executable, str(MODULE_PATH), "--help"], capture_output=True, text=True, check=True)
-    for old_flag in ("--luna-available", "--luna-unavailable", "--runtime-dir", "--probe-lease"):
-        assert old_flag not in help_result.stdout
-    invalid = subprocess.run([sys.executable, str(MODULE_PATH), "--luna-unavailable", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0"], capture_output=True, text=True)
-    assert invalid.returncode != 0 and "unrecognized arguments" in invalid.stderr
+def test_failure_kinds_only_reasoning_and_logic_affect_score_and_escalation():
+    baseline = route((0, 1, 1, 1, 0))
+    for ignored in ("dependency", "permission", "test", "network", "user_input"):
+        selected = route((0, 1, 1, 1, 0), failures=(ignored,))
+        assert selected == baseline
+
+    reasoning = route((0, 1, 1, 1, 0), failures=("reasoning",))
+    logic = route((0, 1, 1, 1, 0), failures=("logic",))
+    assert reasoning.score == logic.score == baseline.score + 1
+    assert route((0, 0, 0, 0, 0), {"architecture"}, ("reasoning",)).model == "gpt-6-astra"
 
 
-def test_parent_same_model_equal_or_higher_effort_reuses_parent():
-    target = module.choose_route(1, 2, 2, 2, 1, 0, set())
-    assert module.parent_compatibility("gpt-6-luna", "high", target)["parent_reused"]
-    assert not module.parent_compatibility("gpt-6-luna", "medium", target)["parent_reused"]
+def test_unknown_flags_and_failure_kinds_are_rejected():
+    try:
+        route((0, 0, 0, 0, 0), {"not_a_real_flag"})
+    except ValueError as exc:
+        assert "unknown flags" in str(exc)
+    else:
+        raise AssertionError("unknown route flag was accepted")
+
+    try:
+        route((0, 0, 0, 0, 0), failures=("not_a_failure_kind",))
+    except ValueError as exc:
+        assert "unknown failure kinds" in str(exc)
+    else:
+        raise AssertionError("unknown failure kind was accepted")
 
 
-def test_parent_cross_model_never_reuses_without_lightweight_opt_in():
-    target = module.choose_route(0, 0, 0, 0, 0, 0, set())
-    assert not module.parent_compatibility("gpt-6.1-sol", "high", target)["parent_reused"]
+def test_quality_first_and_route_only_cli_policies():
+    default = route_cli(*BASE_ARGS)
+    quality = route_cli("--policy", "quality_first", *BASE_ARGS)
+    route_only = route_cli("--policy", "route_only", *BASE_ARGS)
+    assert default["policy_mode"] == "balanced"
+    assert default["route_effort"] == "low"
+    assert (quality["route_model"], quality["route_effort"]) == ("gpt-6-luna", "medium")
+    assert route_only["route_model"] == "gpt-6-luna"
+    assert route_only["dispatch_action"] == "route_only"
+    assert route_only["dispatch_allowed"] is False
 
 
-def test_lightweight_reuse_is_opt_in_and_reports_parent_not_recommended_model():
-    args = ["--clarity", "1", "--scope", "2", "--coupling", "2", "--risk", "2", "--novelty", "1", "--parent-model", "gpt-6.1-sol", "--parent-effort", "high"]
-    legacy = route_cli(*args)
-    assert legacy["dispatch_action"] != "direct_parent_reuse"
+def test_natural_language_policy_controls_and_cli_conflicts():
+    quality = route_cli("--user-input", "Please DO NOT optimize quota.", *BASE_ARGS)
+    assert quality["policy_mode"] == "quality_first"
+    route_only = route_cli("--prompt", "Route only for this task.", *BASE_ARGS)
+    assert route_only["policy_mode"] == "route_only"
+
+    conflict = cli_error("--policy", "balanced", "--user-input", "Do not optimize quota", *BASE_ARGS)
+    assert conflict.returncode != 0 and "conflicts with natural-language policy" in conflict.stderr
+    multi_policy = cli_error("--user-input", "Do not optimize quota; route only", *BASE_ARGS)
+    assert multi_policy.returncode != 0 and "conflicting natural-language policy" in multi_policy.stderr
+
+
+def test_retired_luna_phrases_are_ignored_and_removed_cli_options_rejected():
+    ordinary = route_cli(
+        "--user-input", "disable Luna; Use Luna only",
+        "--flag", "migration", *BASE_ARGS,
+    )
+    assert ordinary["route_model"] == "gpt-6.1-sol"
+    assert ordinary["policy_mode"] == "balanced"
+
+    for retired in ("--disable-luna", "--use-luna-only", "--failed-attempts"):
+        result = cli_error(retired, *BASE_ARGS)
+        assert result.returncode != 0 and "unrecognized arguments" in result.stderr
+    retired_flag = cli_error("--flag", "use_luna_only", *BASE_ARGS)
+    assert retired_flag.returncode != 0 and "invalid choice" in retired_flag.stderr
+
+
+def test_subagent_policy_is_separate_from_route_recommendation():
+    automatic = route_cli(*BASE_ARGS)
+    denied = route_cli("--subagents", "deny", *BASE_ARGS)
+    assert automatic["route_model"] == denied["route_model"] == "gpt-6-luna"
+    assert automatic["dispatch_allowed"] is True
+    assert denied["dispatch_allowed"] is False
+    assert denied["dispatch_action"] == "blocked_subagent_policy"
+    assert denied["blocker_kind"] == "subagents_denied_parent_mismatch"
+    assert denied["status"] == "route_only"
+
+
+def test_no_subagents_allows_matching_parent_execution_without_claiming_execution():
+    result = route_cli(
+        "--no-subagents", "--parent-model", "gpt-6-luna", "--parent-effort", "high",
+        *BASE_ARGS,
+    )
+    assert result["route_model"] == "gpt-6-luna"
+    assert result["dispatch_allowed"] is False
+    assert result["parent_execution_allowed"] is True
+    assert result["dispatch_action"] == "direct_parent_execution_allowed"
+    assert result["status"] == "parent_execution_allowed"
+    assert result["effective_model"] is None and result["effective_effort"] is None
+    assert result["parent_reused"] is False
+    assert result["worker_count"] == 0
+
+
+def test_natural_no_subagents_and_conflicting_explicit_choice():
+    natural = route_cli("--user-input", "Do not use subagents", *BASE_ARGS)
+    assert natural["subagents_policy"] == "deny"
+    assert natural["dispatch_action"] == "blocked_subagent_policy"
+
+    conflict = cli_error(
+        "--subagents", "allow", "--user-input", "Do not use subagents", *BASE_ARGS,
+    )
+    assert conflict.returncode != 0 and "conflicts with natural-language subagents policy" in conflict.stderr
+    cli_conflict = cli_error("--no-subagents", "--subagents", "allow", *BASE_ARGS)
+    assert cli_conflict.returncode != 0 and "conflicts with --subagents" in cli_conflict.stderr
+
+
+def test_parent_compatibility_requires_same_model_and_sufficient_effort():
+    target = route((1, 2, 2, 2, 0))
+    assert module.parent_compatibility("gpt-6-luna", "high", target)["parent_reuse_allowed"]
+    assert not module.parent_compatibility("gpt-6-luna", "medium", target)["parent_reuse_allowed"]
+    assert not module.parent_compatibility("gpt-6.1-sol", "high", target)["parent_reuse_allowed"]
+
+
+def test_lightweight_reuse_is_opt_in_and_does_not_claim_execution():
+    args = [
+        "--clarity", "1", "--scope", "2", "--coupling", "1", "--risk", "1", "--novelty", "1",
+        "--parent-model", "gpt-6.1-sol", "--parent-effort", "high",
+    ]
+    ordinary = route_cli(*args)
+    assert ordinary["dispatch_action"] == "delegate_allowed"
     reused = route_cli("--allow-lightweight-reuse", "--file-count", "2", *args)
-    assert reused["dispatch_action"] == "direct_parent_reuse"
+    assert reused["dispatch_action"] == "direct_parent_execution_allowed"
     assert reused["route_model"] == "gpt-6-luna"
     assert reused["requested_model"] == "gpt-6.1-sol" and reused["requested_effort"] == "high"
-    assert reused["effective_model"] is None and reused["parent_reused"] is True
-    assert "availability" not in reused
+    assert reused["effective_model"] is None
+    assert reused["parent_execution_allowed"] is True
+    assert reused["parent_reused"] is False
 
 
-def test_lightweight_reuse_requires_bound_scope_and_adequate_effort():
-    target = module.choose_route(1, 2, 2, 2, 1, 0, set())
+def test_lightweight_reuse_keeps_scope_effort_and_high_risk_safeguards():
+    target = route((1, 2, 2, 2, 0))
     assert not module.lightweight_reuse_decision(target, "gpt-6.1-sol", "high", enabled=True)["eligible"]
-    assert not module.lightweight_reuse_decision(target, "gpt-6.1-sol", "medium", enabled=True, file_count=2)["eligible"]
+    assert not module.lightweight_reuse_decision(
+        target, "gpt-6.1-sol", "medium", enabled=True, file_count=2,
+    )["eligible"]
+    high_risk = route((2, 3, 3, 2, 1))
+    assert high_risk.model == "gpt-6.1-sol"
+    assert not module.lightweight_reuse_decision(
+        high_risk, "gpt-6.1-sol", "high", enabled=True, file_count=2,
+    )["eligible"]
 
 
-def test_lightweight_reuse_rejects_score_escalation_and_unsupported_parent():
-    sol_route = module.choose_route(2, 3, 3, 2, 1, 0, set())
-    assert sol_route.model == "gpt-6.1-sol"
-    assert not module.lightweight_reuse_decision(sol_route, "gpt-6.1-sol", "high", enabled=True, file_count=2)["eligible"]
-    luna_route = module.choose_route(0, 0, 0, 0, 0, 0, set())
-    assert not module.lightweight_reuse_decision(luna_route, "gpt-6-astra", "high", enabled=True, file_count=1)["eligible"]
+def test_validated_cache_cleanup_remains_explicit():
+    args = [
+        "--allow-lightweight-reuse", "--validated-cache-cleanup", "--established-command",
+        "--reversible-command", "--flag", "cache_cleanup", "--flag", "cache",
+        "--flag", "destructive", "--parent-model", "gpt-6-luna", "--parent-effort", "high",
+        "--clarity", "1", "--scope", "1", "--coupling", "1", "--risk", "4", "--novelty", "0",
+    ]
+    result = route_cli(*args)
+    assert result["route_model"] == "gpt-6.1-sol" and result["route_effort"] == "high"
+    assert result["dispatch_action"] == "direct_parent_execution_allowed"
+    assert result["requested_model"] == "gpt-6-luna"
+
+    denied = cli_error(
+        "--allow-lightweight-reuse", "--established-command", "--reversible-command",
+        "--flag", "cache_cleanup", "--flag", "cache", "--flag", "destructive",
+        "--parent-model", "gpt-6-luna", "--parent-effort", "high",
+        "--clarity", "1", "--scope", "1", "--coupling", "1", "--risk", "4", "--novelty", "0",
+    )
+    assert denied.returncode == 0
+    assert json.loads(denied.stdout)["dispatch_action"] != "direct_parent_execution_allowed"
 
 
-def test_disable_luna_is_an_explicit_sol_preference_not_availability_state():
-    result = route_cli("--disable-luna", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert result["requested_model"] == "gpt-6.1-sol" and result["requested_effort"] == "medium"
-    assert result["dispatch_action"] == "user_override" and result["user_override"] == "disable_luna"
-    assert not ({"availability", "probe_count", "fallback_count", "availability_state_unchanged"} & result.keys())
+def test_delegated_worker_cannot_dispatch_descendant():
+    result = route_cli("--delegated-worker", *BASE_ARGS)
+    assert result["dispatch_action"] == "child_dispatch_denied"
+    assert result["dispatch_allowed"] is False
+    assert result["parent_execution_allowed"] is False
+    assert result["status"] == "blocked"
+    assert result["escalation_required"] is True
+    assert result["blocker_kind"] == "delegated_worker_cannot_dispatch"
 
 
-def test_disable_luna_natural_language_input_and_conflict():
-    result = route_cli("--user-input", "$codex-quota-router 禁用 Luna：普通任务", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert result["user_override"] == "disable_luna" and result["requested_model"] == "gpt-6.1-sol"
-    conflict = subprocess.run([sys.executable, str(MODULE_PATH), "--user-input", "这次禁用 Luna; Use Luna only", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0"], capture_output=True, text=True)
-    assert conflict.returncode != 0 and "conflicting user policies" in conflict.stderr
+def test_explicit_model_effort_matrix_and_rejection():
+    expected_efforts = {
+        "gpt-6-luna": {"none", "low", "medium", "high", "xhigh", "max"},
+        "gpt-6.1-sol": {"low", "medium", "high", "xhigh", "max", "ultra"},
+        "gpt-6-astra": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    }
+    assert module.MODEL_EFFORTS == expected_efforts
+    for model, efforts in module.MODEL_EFFORTS.items():
+        for effort in efforts:
+            module.validate_model_effort(model, effort)
+    for model, effort in (("gpt-6.1-sol", "none"), ("gpt-6-astra", "none"), ("gpt-6-luna", "invalid")):
+        try:
+            module.validate_model_effort(model, effort)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsupported effort accepted for {model}: {effort}")
 
-
-def test_use_luna_only_keeps_luna_route_and_rejects_sol_risk_route():
-    luna = route_cli("--flag", "use_luna_only", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert luna["requested_model"] == "gpt-6-luna" and luna["dispatch_action"] == "use_selected"
-    sol = route_cli("--flag", "use_luna_only", "--flag", "migration", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert sol["requested_model"] == "gpt-6.1-sol" and sol["dispatch_action"] == "blocked_user_policy"
-
-
-def test_explicit_model_effort_and_disable_luna_preserve_user_choice():
-    exact = route_cli("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "low", "--allow-lightweight-reuse", "--file-count", "1", "--parent-model", "gpt-6-luna", "--parent-effort", "high", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
+    exact = route_cli("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "low", *BASE_ARGS)
     assert exact["route_model"] == exact["requested_model"] == "gpt-6.1-sol"
     assert exact["route_effort"] == exact["requested_effort"] == "low"
-    assert exact["dispatch_action"] == "use_selected" and exact["parent_reused"] is False
-    effort = route_cli("--explicit-effort", "low", "--parent-model", "gpt-6-luna", "--parent-effort", "high", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert effort["requested_effort"] == "low" and effort["parent_reused"] is False
-    sol_high = route_cli("--disable-luna", "--explicit-effort", "high", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0")
-    assert sol_high["requested_model"] == "gpt-6.1-sol" and sol_high["requested_effort"] == "high"
+    assert exact["dispatch_action"] == "delegate_allowed"
+    ultra = route_cli("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "ultra", *BASE_ARGS)
+    assert ultra["requested_model"] == "gpt-6.1-sol"
+    assert ultra["requested_effort"] == "ultra"
+
+    unknown = cli_error("--explicit-model", "gpt-5.6", *BASE_ARGS)
+    assert unknown.returncode != 0 and "invalid choice" in unknown.stderr
+    unsupported = cli_error("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "none", *BASE_ARGS)
+    assert unsupported.returncode != 0 and "unsupported explicit model/effort combination" in unsupported.stderr
+    luna_none = route_cli("--explicit-effort", "none", *BASE_ARGS)
+    assert luna_none["requested_model"] == "gpt-6-luna" and luna_none["requested_effort"] == "none"
 
 
-def test_validated_cache_cleanup_keeps_safeguards_explicit():
-    result = route_cli("--allow-lightweight-reuse", "--validated-cache-cleanup", "--established-command", "--reversible-command", "--flag", "cache_cleanup", "--flag", "cache", "--flag", "destructive", "--parent-model", "gpt-6-luna", "--parent-effort", "high", "--clarity", "1", "--scope", "1", "--coupling", "1", "--risk", "4", "--novelty", "0")
-    assert result["route_model"] == "gpt-6.1-sol" and result["route_effort"] == "high"
-    assert result["dispatch_action"] == "direct_parent_reuse" and result["requested_model"] == "gpt-6-luna"
-    denied = route_cli("--allow-lightweight-reuse", "--established-command", "--reversible-command", "--flag", "cache_cleanup", "--flag", "cache", "--flag", "destructive", "--parent-model", "gpt-6-luna", "--parent-effort", "high", "--clarity", "1", "--scope", "1", "--coupling", "1", "--risk", "4", "--novelty", "0")
-    assert denied["dispatch_action"] != "direct_parent_reuse"
+def test_audit_fields_are_truthful_and_attempt_index_counts_prior_failures():
+    result = route_cli(
+        "--failure-kind", "dependency", "--failure-kind", "reasoning",
+        "--failure-kind", "logic", "--failure-kind", "test", *BASE_ARGS,
+    )
+    assert uuid.UUID(result["decision_id"])
+    assert result["route_version"] == "1.5.0"
+    assert result["policy_mode"] == "balanced"
+    assert result["attempt_index"] == 5
+    assert result["failure_kind"] == "test"
+    assert result["failure_kinds"] == ["dependency", "reasoning", "logic", "test"]
+    assert result["reasoning_escalation_count"] == 2
+    assert result["worker_count"] == 0
+    assert result["verification_reused"] is False
+    assert result["effective_model"] is None and result["effective_effort"] is None
 
 
-def test_delegated_worker_cannot_dispatch_descendant_or_reuse_lightweight():
-    args = ["--allow-lightweight-reuse", "--file-count", "1", "--parent-model", "gpt-6-luna", "--parent-effort", "high", "--clarity", "0", "--scope", "0", "--coupling", "0", "--risk", "0", "--novelty", "0"]
-    result = route_cli("--delegated-worker", *args)
-    assert result["dispatch_action"] == "child_dispatch_denied"
-    assert result["dispatch_allowed"] is False and result["parent_reused"] is False
-    assert result["status"] == "blocked" and result["escalation_required"] is True
+def test_no_availability_preflight_or_fallback_state():
+    result = route_cli(*BASE_ARGS)
+    assert result["route_model"] == result["requested_model"] == "gpt-6-luna"
+    assert result["dispatch_action"] == "delegate_allowed"
+    assert not ({
+        "availability", "probe_count", "fallback_count", "fallback_reason",
+        "availability_state_unchanged",
+    } & result.keys())
