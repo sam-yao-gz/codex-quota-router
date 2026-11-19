@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [1.7.0] - 2026-11-19
+
+- Allow only GPT-6.2 Sol and GPT-6.2 Astra. Sol handles default execution at Low, Medium, or High effort; Astra retains its read-only planning role.
+- Reject all other explicit model requests. Remove cross-model parent reuse and its CLI options, and remove the inactive availability/probe helper. Same-model parent reuse and hard-risk gates remain.
+- Installers archive retired managed agent files outside the active agents directory.
+
 ## [1.6.0] - 2026-11-19
 
 - Use GPT-6.2 Sol for escalation and hard-risk gates and GPT-6.2 Astra for read-only planning. Keep GPT-6 Luna and the six role names and default efforts unchanged.

@@ -16,7 +16,20 @@ if [[ ! -d "$SKILL_TARGET" || "$(cd "$SKILL_TARGET" && pwd -P)" != "$SOURCE_ROOT
   cp -R "$SOURCE_ROOT" "$SKILL_TARGET"
 fi
 cp "$SOURCE_ROOT"/agents/*.toml "$AGENT_TARGET"/
-rm -f "$AGENT_TARGET/terra-resolver.toml" "$AGENT_TARGET/terra-guard.toml"
+RETIRED_BATCH=""
+for name in luna-fast.toml luna-worker.toml luna-deep.toml terra-resolver.toml terra-guard.toml; do
+  if [[ -f "$AGENT_TARGET/$name" || -L "$AGENT_TARGET/$name" ]]; then
+    if [[ -z "$RETIRED_BATCH" ]]; then
+      RETIRED_ROOT="$HOME/.codex/codex-quota-router-retired"
+      mkdir -p "$RETIRED_ROOT"
+      RETIRED_BATCH="$(mktemp -d "$RETIRED_ROOT/agents.XXXXXXXX")"
+    fi
+    mv -- "$AGENT_TARGET/$name" "$RETIRED_BATCH/$name"
+  fi
+done
+if [[ -n "$RETIRED_BATCH" ]]; then
+  echo "Archived retired agent files: $RETIRED_BATCH"
+fi
 
 if [[ "$SKIP_GLOBAL" != "1" ]]; then
   python3 - "$GLOBAL_AGENTS_FILE" "$SOURCE_ROOT/snippets/AGENTS.global.md" <<'PY2'

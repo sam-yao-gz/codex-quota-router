@@ -1,16 +1,13 @@
-# Codex Quota Router 1.6.0
+# Codex Quota Router 1.7.0
 
 [中文](README.md) | **English**
 
-<p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
-
-Auditable model-routing recommendations for OpenAI Codex workflows: GPT-6 Luna by task, GPT-6.2 Sol for risk gates and hidden coupling, and GPT-6.2 Astra for rare read-only architecture planning. A recommendation does not switch the running thread's model or prove that the target model executed.
+Auditable routing recommendations for OpenAI Codex workflows, limited to GPT-6.2 Sol and GPT-6.2 Astra. A recommendation does not switch the running thread's model or prove that the target model executed.
 
 | Model | Responsibility |
 | --- | --- |
-| Luna | Default execution at Low, Medium, or High effort as the task requires |
-| Sol | High-risk gates, hidden coupling, and reasoning escalation |
-| Astra | Rare read-only architecture planning and root-cause diagnosis |
+| GPT-6.2 Sol | Default execution at Low, Medium, or High effort as the task requires |
+| GPT-6.2 Astra | Rare read-only architecture planning and root-cause diagnosis |
 
 ## Policies
 
@@ -24,11 +21,9 @@ Model and effort combinations accepted by the offline router:
 
 | Model | Supported effort |
 | --- | --- |
-| `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `gpt-6.2-sol`, `gpt-6.2-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
-| `gpt-6.1-sol`, `gpt-6-astra` (explicit only) | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 
-Default routing keeps the same six roles and default efforts. A parent on the selected model can act directly with adequate effort; explicit effort must match exactly. Older models are never selected automatically and do not satisfy the current Sol High hard-risk gate. Explicit choices still require support from the execution host.
+Default routing uses four roles. A parent on the selected model can act directly with adequate effort; explicit effort must match exactly. Cross-model substitution and explicit choices outside the allowlist are rejected. A valid choice still requires support from the execution host.
 
 ## Installation
 
@@ -48,6 +43,8 @@ chmod +x install.sh
 ```
 
 Use `SKIP_GLOBAL_AUTO_ROUTING=1 ./install.sh` to skip the global file. Restart Codex after installation.
+
+The installers archive retired managed profiles under `~/.codex/codex-quota-router-retired/`. The two-model limit applies to this skill and its managed roles; the installers do not change the model picker, provider catalogs, account entitlements, or `config.toml`. The old cross-model reuse arguments and audit field no longer apply.
 
 ## Validation
 
@@ -74,4 +71,4 @@ Linux/macOS: remove the installed skill and agent files, then restore the backed
 - `references/execution-contract.md` — execution states and blocker handling.
 - `references/routing-policy.md` — policies, score bands, effort levels, and risk gates.
 - `scripts/route_score.py` — deterministic route scoring and policy validation.
-- `agents/*.toml` — the six default model/effort profiles.
+- `agents/*.toml` — the four default role profiles.

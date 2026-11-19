@@ -1,7 +1,4 @@
-# Optional Codex defaults. Merge these keys into ~/.codex/config.toml.
-# Custom agent files already pin their own model and effort.
-
-[agents]
-enabled = true
-default_subagent_model = "gpt-6-luna"
-default_subagent_reasoning_effort = "medium"
+# Optional root defaults for a host that uses the canonical model IDs.
+# Custom agent profiles pin their models and efforts independently.
+model = "gpt-6.2-sol"
+model_reasoning_effort = "medium"

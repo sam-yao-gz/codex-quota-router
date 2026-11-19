@@ -11,6 +11,7 @@ if (Test-Path $SkillTarget) {
 }
 
 @(
+    "sol-fast.toml",
     "luna-fast.toml",
     "luna-worker.toml",
     "luna-deep.toml",
