@@ -5,7 +5,7 @@
 ### 每次接手时执行
 
 1. 用户或协作方要求接手本项目、或收到跨 agent 交接提示时，先在当前仓库执行只读检查：`git remote -v`、`git branch --show-current`、`git rev-parse HEAD`、`git status --short`。涉及额外的 Git 查询使用 `git -c core.hooksPath=NUL ...` 临时绕过 Hooks，不修改 Git 配置。预期 GitHub owner/repo 为 `sam-yao-gz/codex-quota-router`；以实际 remote 为准，发现与预期 remote 不一致时先报障，不能按目录名瞎猜。
-2. 环境确认后使用当前配置的 `agentmemory_remote.memory_search`（或等价可达 MCP 前缀）分别取业务桶与元协议桶。推荐为可直接使用的调用参数（可按任务收窄 query）：
+2. 按用户级 `AGENTS.md` 读取官方 `recall`，用现有 `agentmemory_remote.memory_search` 先查业务桶，仅需元规则或跨端通信时查 shareENV 桶。远端失败就报告；`codex-knowledge` 只用于用户明确要求的本机历史查询，不作默认入口或回退。可按任务收窄下列查询：
 
    ```json
    {"project":"sam-yao-gz/codex-quota-router","query":"codex-quota-router enroll handoff context","limit":5}
@@ -24,4 +24,4 @@
 2. 业务事实与修改验证写入 `sam-yao-gz/codex-quota-router`；跨 agent 协议与通信 / ops 写入 `sam-yao-gz/shareENV`。用 `agentmemory_remote.memory_remember({project, content, concepts})`（或等价工具）；每条尽量只提交一次；不写入密钥、完整会话、原始隐私日志或不必要的大段信息。
 3. 执行 write-verify：取得返回 ID 后按 ID GET；核对实存 `project`、`agentId` 与正文 UTF-8 SHA256 与本地保存内容一致。仅当 saved 且回读一致才算写验证完成；出现脱敏占位、截断、超时或缺 ID、回读不一致，标「写入状态未验证」，停止自动重试或改写，不用本地存储冒充远程成功。
 
-本仓库只从本机 `E:/CodexData/project/shareENV/docs/operations.md` 与同目录 `agentmemory-mvp.md` 取共享协议摘要；不在本文件内复制整份协议；其他设备先定位真实 shareENV 本地路径。本文件不安装 rules_cache、Hooks、后台轮询或新的桥接服务。
+共享流程读取用户级 `AGENTS.md` 登记的独立 rules_cache 下 `docs/operations.md` 与 `docs/agentmemory-mvp.md`；未登记或不可读就报告，不用业务工作区顶替。本文件不安装 rules_cache、Hooks、后台轮询或新的桥接服务。
