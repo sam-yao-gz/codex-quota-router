@@ -10,11 +10,17 @@ from dataclasses import asdict, dataclass
 from typing import Sequence
 
 
-ROUTE_VERSION = "1.5.0"
+ROUTE_VERSION = "1.6.0"
+LUNA_MODEL = "gpt-6-luna"
+SOL_MODEL = "gpt-6.2-sol"
+ASTRA_MODEL = "gpt-6.2-astra"
+SOL_ASTRA_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max", "ultra"})
 MODEL_EFFORTS = {
-    "gpt-6-luna": {"none", "low", "medium", "high", "xhigh", "max"},
-    "gpt-6.1-sol": {"low", "medium", "high", "xhigh", "max", "ultra"},
-    "gpt-6-astra": {"low", "medium", "high", "xhigh", "max", "ultra"},
+    LUNA_MODEL: {"none", "low", "medium", "high", "xhigh", "max"},
+    SOL_MODEL: SOL_ASTRA_EFFORTS,
+    ASTRA_MODEL: SOL_ASTRA_EFFORTS,
+    "gpt-6.1-sol": SOL_ASTRA_EFFORTS,
+    "gpt-6-astra": SOL_ASTRA_EFFORTS,
 }
 EFFORT_ORDER = {"none": -1, "low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4, "ultra": 5}
 EFFORT_CHOICES = tuple(EFFORT_ORDER)
@@ -36,7 +42,7 @@ SOL_HIGH_FLAGS = {
     "secrets", "secret", "data_loss", "security", "unknown_deletion",
     "recursive_delete", "unknown_recursive_delete",
 }
-LIGHTWEIGHT_PARENT_MODELS = {"gpt-6-luna", "gpt-6.1-sol"}
+LIGHTWEIGHT_PARENT_MODELS = {LUNA_MODEL, SOL_MODEL}
 
 
 @dataclass(frozen=True)
@@ -121,8 +127,8 @@ def lightweight_reuse_decision(
         established_command and (read_only or reversible)
     )
     cleanup_ok = validated_cache_cleanup and {"cache_cleanup", "cache", "destructive"} <= flags and established_command
-    route_ok = target.model == "gpt-6-luna" or (
-        cleanup_ok and target.model == "gpt-6.1-sol" and target.effort == "high"
+    route_ok = target.model == LUNA_MODEL or (
+        cleanup_ok and target.model == SOL_MODEL and target.effort == "high"
     )
     parent_ok = parent_model in LIGHTWEIGHT_PARENT_MODELS
     hard_risk = flags & {
@@ -144,7 +150,7 @@ def lightweight_reuse_decision(
     if not enabled:
         reason = "lightweight reuse is opt-in"
     elif not parent_ok:
-        reason = "parent model is outside supported GPT-6 Luna/Sol profiles"
+        reason = "parent model is outside the active Luna/Sol profiles"
     elif not route_ok:
         reason = "lightweight reuse is limited to Luna routes and validated cache cleanup"
     elif not effort_ok:
@@ -204,33 +210,33 @@ def choose_route(
     score = clarity + scope + coupling + risk + novelty + min(escalation_count, 2)
 
     if flags & SOL_HIGH_FLAGS:
-        return Route("sol_guard", "gpt-6.1-sol", "high", score, "data, security, concurrency, destructive, or production-risk gate")
+        return Route("sol_guard", SOL_MODEL, "high", score, "data, security, concurrency, destructive, or production-risk gate")
     if flags & {"architecture", "multi_system_redesign", "resolver_failed"} and (
         risk >= 3 or coupling >= 3 or escalation_count >= 1
     ):
-        return Route("sol_architect", "gpt-6-astra", "medium", score, "architecture/root-cause planning gate; downgrade implementation afterward")
+        return Route("sol_architect", ASTRA_MODEL, "medium", score, "architecture/root-cause planning gate; route implementation separately")
     if flags & {"cache", "idempotency", "intermittent", "cross_module_unknown"} or (
         escalation_count >= 1 and score >= 8
     ):
-        return Route("sol_resolver", "gpt-6.1-sol", "medium", score, "hidden-state/coupling gate or evidence-backed reasoning escalation")
+        return Route("sol_resolver", SOL_MODEL, "medium", score, "hidden-state/coupling gate or evidence-backed reasoning escalation")
     if score <= 2:
-        return Route("luna_fast", "gpt-6-luna", "low", score, "mechanical bounded task")
+        return Route("luna_fast", LUNA_MODEL, "low", score, "mechanical bounded task")
     if score <= 6:
-        return Route("luna_worker", "gpt-6-luna", "medium", score, "default clear implementation")
+        return Route("luna_worker", LUNA_MODEL, "medium", score, "default clear implementation")
     if score <= 10:
-        return Route("luna_deep", "gpt-6-luna", "high", score, "bounded nontrivial task")
+        return Route("luna_deep", LUNA_MODEL, "high", score, "bounded nontrivial task")
     if score <= 13:
-        return Route("sol_resolver", "gpt-6.1-sol", "medium", score, "complexity exceeded Luna threshold")
-    return Route("sol_guard", "gpt-6.1-sol", "high", score, "high complexity/risk score")
+        return Route("sol_resolver", SOL_MODEL, "medium", score, "complexity exceeded Luna threshold")
+    return Route("sol_guard", SOL_MODEL, "high", score, "high complexity/risk score")
 
 
 def apply_quality_first(route: Route) -> Route:
     """Raise ordinary routes one effort step while preserving Astra and Sol High gates."""
     upgrades = {
-        ("gpt-6-luna", "low"): ("luna_worker", "gpt-6-luna", "medium"),
-        ("gpt-6-luna", "medium"): ("luna_deep", "gpt-6-luna", "high"),
-        ("gpt-6-luna", "high"): ("sol_resolver", "gpt-6.1-sol", "medium"),
-        ("gpt-6.1-sol", "medium"): ("sol_guard", "gpt-6.1-sol", "high"),
+        (LUNA_MODEL, "low"): ("luna_worker", LUNA_MODEL, "medium"),
+        (LUNA_MODEL, "medium"): ("luna_deep", LUNA_MODEL, "high"),
+        (LUNA_MODEL, "high"): ("sol_resolver", SOL_MODEL, "medium"),
+        (SOL_MODEL, "medium"): ("sol_guard", SOL_MODEL, "high"),
     }
     selected = upgrades.get((route.model, route.effort))
     if selected is None:
@@ -251,7 +257,7 @@ def apply_explicit_route(
     selected_model = model or route.model
     selected_effort = effort or route.effort
     validate_model_effort(selected_model, selected_effort, "explicit model/effort")
-    if hard_risk and (selected_model != "gpt-6.1-sol" or selected_effort != "high"):
+    if hard_risk and (selected_model != SOL_MODEL or selected_effort != "high"):
         raise ValueError("explicit model/effort conflicts with Sol High hard-risk gate")
     return Route(
         "explicit_user_route", selected_model, selected_effort, route.score,
@@ -365,27 +371,25 @@ def main() -> int:
         blocker_kind = "route_only_policy"
         status = "route_only"
         dispatch_allowed = False
-    elif subagents_policy == "deny":
-        if compatibility["parent_reuse_allowed"]:
-            dispatch_action = "direct_parent_execution_allowed"
-            dispatch_reason = "subagents are denied; the current parent matches the route and has adequate effort"
-            status = "parent_execution_allowed"
-            parent_execution_allowed = True
-        else:
-            dispatch_action = "blocked_subagent_policy"
-            dispatch_reason = "subagents are denied and the current parent does not match the route with adequate effort"
-            blocker_kind = "subagents_denied_parent_mismatch"
-            status = "route_only"
-            dispatch_allowed = False
-    elif reuse["eligible"]:
+    elif compatibility["parent_reuse_allowed"] or (subagents_policy != "deny" and reuse["eligible"]):
+        dispatch_reason = (
+            "the current parent matches the route and has adequate effort"
+            if compatibility["parent_reuse_allowed"]
+            else "bounded lightweight parent execution permitted; route remains recommendation only"
+        )
         requested = Route(
             "parent_execution", args.parent_model, args.parent_effort, route.score,
-            "bounded lightweight parent execution permitted; route remains recommendation only",
+            dispatch_reason,
         )
         dispatch_action = "direct_parent_execution_allowed"
-        dispatch_reason = None
+        dispatch_allowed = False
         parent_execution_allowed = True
         status = "parent_execution_allowed"
+    elif subagents_policy == "deny":
+        dispatch_action = "blocked_subagent_policy"
+        dispatch_reason = "subagents are denied and the current parent does not match the route with adequate effort"
+        blocker_kind = "subagents_denied_parent_mismatch"
+        status = "route_only"
 
     reasoning_escalation_count = sum(kind in ESCALATING_FAILURE_KINDS for kind in failure_kinds)
     result = asdict(requested)

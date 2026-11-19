@@ -5,6 +5,8 @@ import re
 import sys
 from pathlib import Path
 
+from route_score import MODEL_EFFORTS, ROUTE_VERSION
+
 try:
     import tomllib
 except ImportError:  # pragma: no cover
@@ -26,7 +28,7 @@ else:
         errors.append("frontmatter description is missing")
 
 for required_phrase in (
-    "Codex Quota Router 1.5.0",
+    f"Codex Quota Router {ROUTE_VERSION}",
     "Recommended routes are not proof of execution",
     "Lightweight reuse is opt-in",
     "runtime evidence",
@@ -74,8 +76,8 @@ for obsolete in ("model_availability.py", "--luna-unavailable", "--luna-availabl
     if obsolete in active_text:
         errors.append(f"active router references retired availability policy: {obsolete}")
 
-if (root / "VERSION").read_text(encoding="utf-8").strip() != "1.5.0":
-    errors.append("VERSION must be 1.5.0")
+if (root / "VERSION").read_text(encoding="utf-8").strip() != ROUTE_VERSION:
+    errors.append(f"VERSION does not match route_version {ROUTE_VERSION}")
 
 for path in (
     skill,
@@ -104,9 +106,9 @@ if tomllib:
         "luna-fast.toml": ("gpt-6-luna", "low"),
         "luna-worker.toml": ("gpt-6-luna", "medium"),
         "luna-deep.toml": ("gpt-6-luna", "high"),
-        "sol-resolver.toml": ("gpt-6.1-sol", "medium"),
-        "sol-guard.toml": ("gpt-6.1-sol", "high"),
-        "sol-architect.toml": ("gpt-6-astra", "medium"),
+        "sol-resolver.toml": ("gpt-6.2-sol", "medium"),
+        "sol-guard.toml": ("gpt-6.2-sol", "high"),
+        "sol-architect.toml": ("gpt-6.2-astra", "medium"),
     }
     for path in sorted((root / "agents").glob("*.toml")):
         try:
@@ -117,6 +119,8 @@ if tomllib:
         for field in ("name", "description", "developer_instructions", "model", "model_reasoning_effort"):
             if not data.get(field):
                 errors.append(f"{path.name} missing {field}")
+        if data.get("model_reasoning_effort") not in MODEL_EFFORTS.get(data.get("model"), ()):
+            errors.append(f"{path.name} has an unsupported model/effort combination")
         if data.get("model_reasoning_effort") in {"xhigh", "max", "ultra"}:
             errors.append(f"{path.name} violates tight budget effort policy")
         if (data.get("model"), data.get("model_reasoning_effort")) != expected_models.get(path.name):

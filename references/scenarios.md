@@ -17,7 +17,7 @@
 ## Lightweight examples
 
 - With explicit opt-in, an adequate supported Sol parent can handle a known two-file Luna recommendation directly. `route_model` remains Luna; `requested_model` is Sol; effective model remains unverified unless runtime evidence exists.
-- A one-file task without opt-in follows ordinary routing. Exact model/effort requests are not bypassed.
+- An adequate parent on the same model can handle a route without opt-in; a different-model parent cannot do so just because the task touches one file. An explicit effort must match exactly.
 - An authorized established cache-cleanup command may use the narrow validated exception only with a prevalidated whitelist, no reparse-point traversal, and locked files skipped. Unknown recursive deletion is never eligible.
 - A delegated worker cannot make a child or invoke lightweight reuse as a descendant-dispatch shortcut.
 - A selected model fails to start or execute: report a blocker; do not automatically assign another model.

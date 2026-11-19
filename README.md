@@ -1,10 +1,10 @@
-# Codex Quota Router 1.5.0
+# Codex Quota Router 1.6.0
 
 [中文](README.md) | [English](README_EN.md)
 
 <p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
 
-为 OpenAI Codex 工作流提供可审计的模型路由建议：默认按任务匹配 GPT-6 Luna，风险和隐藏耦合任务使用 GPT-6.1 Sol，少数只读架构规划使用 GPT-6 Astra。路由建议不代表当前线程已切换模型，也不代表目标模型已经执行。
+为 OpenAI Codex 工作流提供可审计的模型路由建议：默认按任务匹配 GPT-6 Luna，风险和隐藏耦合任务使用 GPT-6.2 Sol，少数只读架构规划使用 GPT-6.2 Astra。路由建议不代表当前线程已切换模型，也不代表目标模型已经执行。
 
 | 模型 | 职责 |
 | --- | --- |
@@ -20,15 +20,15 @@
 - `subagents=auto|allow|deny`：单独控制委派倾向；`deny` 时，仅当当前父线程满足路由要求才直接执行。
 - 用户明确指定的模型和 effort 优先保留。effort 按模型能力校验；未知模型、effort 组合或 flag 会明确报错。若精确选择与 Sol High 风险门槛冲突，也会报错而不降低门槛。
 
-当前 Codex 主机暴露的显式 effort 能力：
+路由器离线接受的模型与 effort：
 
 | 模型 | 支持的 effort |
 | --- | --- |
 | `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
-| `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6.2-sol`、`gpt-6.2-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6.1-sol`、`gpt-6-astra`（仅手动指定） | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 
-默认路由仍使用已安装的六个 agent profile；显式更高 effort 只有在执行机制支持并实际传入时才生效。
+默认路由保留六个角色和原有 effort。已匹配模型且 effort 足够的父线程可直接工作；用户指定的 effort 必须精确匹配。旧模型不会被自动选用，也不满足当前 Sol High 硬门槛。手动指定的模型和 effort 仍取决于执行端是否支持，并非可用性承诺。
 
 ## 安装
 
