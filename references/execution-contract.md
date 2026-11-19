@@ -2,13 +2,13 @@
 
 ## Honor explicit choices
 
-Honor explicit model, effort, and workflow constraints. A route recommendation is not execution evidence. Do not turn an exact model/effort request into cross-model reuse or a different workflow. If an exact model/effort conflicts with a Sol High hard-risk gate, return a clear conflict instead of lowering the gate. The retired Luna-disable and Luna-only policies are not supported; do not infer either policy from user text.
+Honor explicit effort and workflow constraints and reject models outside the GPT-6.2 Sol/Astra allowlist. A route recommendation is not execution evidence. If an exact model/effort conflicts with a Sol High hard-risk gate, return a clear conflict instead of lowering the gate.
 
 ## Direct execution and dispatch
 
-The current parent should execute when its model and effort satisfy the selected route, unless the user's workflow requires delegation. An explicitly requested effort must match exactly. Optional cross-model lightweight reuse is opt-in and ordinarily limited to a Luna recommendation, a Luna or GPT-6.2 Sol parent, adequate effort, and known scope (at most two files or one established read-only/reversible command). It cannot bypass score-based Sol escalation. Hard risks and exact overrides fail closed. The narrow Sol High cache-cleanup exception requires user authorization, a prevalidated whitelist, no reparse-point traversal, and locked files skipped. Delegated workers cannot dispatch descendants.
+The current parent should execute when its model matches and its effort meets the selected route, unless the user's workflow requires delegation. An explicitly requested effort must match exactly. No cross-model reuse or risk exception is available. Delegated workers cannot dispatch descendants.
 
-Select the chosen route and follow the user's workflow. There is no availability preflight, circuit, probe, unknown-start ceremony, or automatic model fallback. If the selected model cannot start or execution fails, report a blocker; do not imply another model ran or reassign solely because of that failure. Sol is used for risk/complexity gates and `quality_first`; Astra is rare bounded planning.
+Select the chosen route and follow the user's workflow. There is no availability preflight or automatic model fallback. If the selected model cannot start or execution fails, report a blocker; do not imply another model ran or reassign solely because of that failure. Sol is the default executor; Astra's default role is rare, read-only planning.
 
 `route_only` means no worker dispatch. `subagents=deny` permits direct parent execution only when the parent satisfies the selected model/effort; otherwise report the selected route without dispatching.
 

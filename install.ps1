@@ -10,6 +10,7 @@ $SkillTarget = Join-Path $HOME ".agents\skills\codex-quota-router"
 $AgentTarget = Join-Path $HOME ".codex\agents"
 $CodexHome = Join-Path $HOME ".codex"
 $GlobalAgentsFile = Join-Path $CodexHome "AGENTS.md"
+$RetiredAgentRoot = Join-Path $CodexHome "codex-quota-router-retired"
 
 function Copy-DirectoryClean {
     param([string]$Source, [string]$Destination)
@@ -35,10 +36,17 @@ New-Item -ItemType Directory -Path $CodexHome -Force | Out-Null
 
 Copy-DirectoryClean -Source $SourceRoot -Destination $SkillTarget
 Copy-Item (Join-Path $SourceRoot "agents\*.toml") $AgentTarget -Force
-@("terra-resolver.toml", "terra-guard.toml") | ForEach-Object {
+@("luna-fast.toml", "luna-worker.toml", "luna-deep.toml", "terra-resolver.toml", "terra-guard.toml") | ForEach-Object {
     $legacy = Join-Path $AgentTarget $_
-    if (Test-Path $legacy) { Remove-Item $legacy -Force }
+    if (Test-Path -LiteralPath $legacy -PathType Leaf) {
+        if (-not $retiredBatch) {
+            $retiredBatch = Join-Path $RetiredAgentRoot ([guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $retiredBatch | Out-Null
+        }
+        Move-Item -LiteralPath $legacy -Destination (Join-Path $retiredBatch $_)
+    }
 }
+if ($retiredBatch) { Write-Host "Archived retired agent files: $retiredBatch" }
 
 if (-not $SkipGlobalAutoRouting) {
     $begin = '<!-- BEGIN CODEX_QUOTA_ROUTER -->'

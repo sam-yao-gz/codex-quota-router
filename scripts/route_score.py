@@ -10,19 +10,15 @@ from dataclasses import asdict, dataclass
 from typing import Sequence
 
 
-ROUTE_VERSION = "1.6.0"
-LUNA_MODEL = "gpt-6-luna"
+ROUTE_VERSION = "1.7.0"
 SOL_MODEL = "gpt-6.2-sol"
 ASTRA_MODEL = "gpt-6.2-astra"
 SOL_ASTRA_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max", "ultra"})
 MODEL_EFFORTS = {
-    LUNA_MODEL: {"none", "low", "medium", "high", "xhigh", "max"},
     SOL_MODEL: SOL_ASTRA_EFFORTS,
     ASTRA_MODEL: SOL_ASTRA_EFFORTS,
-    "gpt-6.1-sol": SOL_ASTRA_EFFORTS,
-    "gpt-6-astra": SOL_ASTRA_EFFORTS,
 }
-EFFORT_ORDER = {"none": -1, "low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4, "ultra": 5}
+EFFORT_ORDER = {"low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4, "ultra": 5}
 EFFORT_CHOICES = tuple(EFFORT_ORDER)
 FAILURE_KINDS = {"reasoning", "logic", "dependency", "permission", "test", "network", "user_input"}
 ESCALATING_FAILURE_KINDS = {"reasoning", "logic"}
@@ -40,9 +36,8 @@ SOL_HIGH_FLAGS = {
     "migration", "auth", "payment", "concurrency", "destructive",
     "production_incident", "production_change", "credentials", "credential",
     "secrets", "secret", "data_loss", "security", "unknown_deletion",
-    "recursive_delete", "unknown_recursive_delete",
+    "recursive_delete", "unknown_recursive_delete", "cache_cleanup",
 }
-LIGHTWEIGHT_PARENT_MODELS = {LUNA_MODEL, SOL_MODEL}
 
 
 @dataclass(frozen=True)
@@ -107,65 +102,6 @@ def parent_compatibility(parent_model: str | None, parent_effort: str | None, ta
     }
 
 
-def lightweight_reuse_decision(
-    target: Route, parent_model: str | None, parent_effort: str | None, *,
-    enabled: bool = False, file_count: int | None = None,
-    established_command: bool = False, read_only: bool = False,
-    reversible: bool = False, explicit_override: bool = False,
-    risk: int = 0, flags: set[str] | None = None,
-    validated_cache_cleanup: bool = False, delegated_worker: bool = False,
-) -> dict:
-    """Opt-in direct parent execution permission; never changes the route recommendation."""
-    flags = flags or set()
-    effort_ok = bool(
-        parent_model in MODEL_EFFORTS
-        and parent_effort in MODEL_EFFORTS[parent_model]
-        and parent_effort in EFFORT_ORDER
-        and EFFORT_ORDER[parent_effort] >= EFFORT_ORDER[target.effort]
-    )
-    scope_ok = (file_count is not None and 0 <= file_count <= 2) or (
-        established_command and (read_only or reversible)
-    )
-    cleanup_ok = validated_cache_cleanup and {"cache_cleanup", "cache", "destructive"} <= flags and established_command
-    route_ok = target.model == LUNA_MODEL or (
-        cleanup_ok and target.model == SOL_MODEL and target.effort == "high"
-    )
-    parent_ok = parent_model in LIGHTWEIGHT_PARENT_MODELS
-    hard_risk = flags & {
-        "migration", "auth", "payment", "concurrency", "production_incident",
-        "production_change", "credentials", "credential", "secrets", "secret",
-        "data_loss", "security", "architecture", "multi_system_redesign",
-        "resolver_failed", "cache", "idempotency", "intermittent", "cross_module_unknown",
-        "unknown_deletion", "recursive_delete", "unknown_recursive_delete",
-    }
-    if cleanup_ok:
-        hard_risk -= {"cache"}
-    eligible = bool(
-        enabled and parent_ok and route_ok and effort_ok and scope_ok and not explicit_override
-        and not delegated_worker and not hard_risk
-        and (risk <= 2 or cleanup_ok)
-        and ("destructive" not in flags or cleanup_ok)
-    )
-    reason = None
-    if not enabled:
-        reason = "lightweight reuse is opt-in"
-    elif not parent_ok:
-        reason = "parent model is outside the active Luna/Sol profiles"
-    elif not route_ok:
-        reason = "lightweight reuse is limited to Luna routes and validated cache cleanup"
-    elif not effort_ok:
-        reason = "parent effort is below the selected route or unsupported for its model"
-    elif not scope_ok:
-        reason = "task is not explicitly bounded to two files or one established safe command"
-    elif explicit_override:
-        reason = "explicit model/effort request forbids lightweight reuse"
-    elif delegated_worker:
-        reason = "delegated workers cannot dispatch or reuse descendants"
-    elif hard_risk or (risk > 2 and not cleanup_ok) or ("destructive" in flags and not cleanup_ok):
-        reason = "task has a hard risk gate"
-    return {"eligible": eligible, "reason": reason}
-
-
 def child_dispatch_decision(delegated_worker: bool = False, allow_descendant: bool = False) -> dict:
     """Prevent a delegated worker from dispatching descendants by default."""
     if delegated_worker and not allow_descendant:
@@ -215,27 +151,21 @@ def choose_route(
         risk >= 3 or coupling >= 3 or escalation_count >= 1
     ):
         return Route("sol_architect", ASTRA_MODEL, "medium", score, "architecture/root-cause planning gate; route implementation separately")
+    if score >= 11:
+        return Route("sol_guard", SOL_MODEL, "high", score, "high complexity/risk score")
     if flags & {"cache", "idempotency", "intermittent", "cross_module_unknown"} or (
         escalation_count >= 1 and score >= 8
     ):
         return Route("sol_resolver", SOL_MODEL, "medium", score, "hidden-state/coupling gate or evidence-backed reasoning escalation")
     if score <= 2:
-        return Route("luna_fast", LUNA_MODEL, "low", score, "mechanical bounded task")
-    if score <= 6:
-        return Route("luna_worker", LUNA_MODEL, "medium", score, "default clear implementation")
-    if score <= 10:
-        return Route("luna_deep", LUNA_MODEL, "high", score, "bounded nontrivial task")
-    if score <= 13:
-        return Route("sol_resolver", SOL_MODEL, "medium", score, "complexity exceeded Luna threshold")
-    return Route("sol_guard", SOL_MODEL, "high", score, "high complexity/risk score")
+        return Route("sol_fast", SOL_MODEL, "low", score, "mechanical bounded task")
+    return Route("sol_resolver", SOL_MODEL, "medium", score, "ordinary or bounded nontrivial implementation")
 
 
 def apply_quality_first(route: Route) -> Route:
     """Raise ordinary routes one effort step while preserving Astra and Sol High gates."""
     upgrades = {
-        (LUNA_MODEL, "low"): ("luna_worker", LUNA_MODEL, "medium"),
-        (LUNA_MODEL, "medium"): ("luna_deep", LUNA_MODEL, "high"),
-        (LUNA_MODEL, "high"): ("sol_resolver", SOL_MODEL, "medium"),
+        (SOL_MODEL, "low"): ("sol_resolver", SOL_MODEL, "medium"),
         (SOL_MODEL, "medium"): ("sol_guard", SOL_MODEL, "high"),
     }
     selected = upgrades.get((route.model, route.effort))
@@ -299,14 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--user-input", "--prompt", help="natural-language policy input")
     parser.add_argument("--parent-model")
     parser.add_argument("--parent-effort", choices=EFFORT_CHOICES)
-    parser.add_argument("--allow-lightweight-reuse", action="store_true", help="opt into guarded direct parent execution")
-    parser.add_argument("--file-count", type=int, help="known maximum changed-file count for lightweight eligibility")
-    parser.add_argument("--established-command", action="store_true")
-    parser.add_argument("--read-only-command", action="store_true")
-    parser.add_argument("--reversible-command", action="store_true")
-    parser.add_argument("--explicit-model", choices=sorted(MODEL_EFFORTS), help="explicit model request disables lightweight reuse")
-    parser.add_argument("--explicit-effort", choices=EFFORT_CHOICES, help="explicit effort request disables lightweight reuse")
-    parser.add_argument("--validated-cache-cleanup", action="store_true", help="assert authorized whitelist cleanup, no reparse traversal, locked files skipped")
+    parser.add_argument("--explicit-model", choices=sorted(MODEL_EFFORTS), help="exact model from the active allowlist")
+    parser.add_argument("--explicit-effort", choices=EFFORT_CHOICES, help="exact reasoning effort")
     parser.add_argument("--delegated-worker", "--worker-context", dest="delegated_worker", action="store_true", help="deny descendant dispatch from a delegated worker")
     return parser
 
@@ -336,19 +260,6 @@ def main() -> int:
     compatibility = parent_compatibility(args.parent_model, args.parent_effort, route)
     if args.explicit_effort and args.parent_effort != args.explicit_effort:
         compatibility["parent_reuse_allowed"] = False
-    reuse = lightweight_reuse_decision(
-        route, args.parent_model, args.parent_effort,
-        enabled=args.allow_lightweight_reuse,
-        file_count=args.file_count,
-        established_command=args.established_command,
-        read_only=args.read_only_command,
-        reversible=args.reversible_command,
-        explicit_override=bool(args.explicit_model or args.explicit_effort),
-        risk=args.risk,
-        flags=flags,
-        validated_cache_cleanup=args.validated_cache_cleanup,
-        delegated_worker=args.delegated_worker,
-    )
     child_guard = child_dispatch_decision(args.delegated_worker)
 
     requested = route
@@ -371,12 +282,8 @@ def main() -> int:
         blocker_kind = "route_only_policy"
         status = "route_only"
         dispatch_allowed = False
-    elif compatibility["parent_reuse_allowed"] or (subagents_policy != "deny" and reuse["eligible"]):
-        dispatch_reason = (
-            "the current parent matches the route and has adequate effort"
-            if compatibility["parent_reuse_allowed"]
-            else "bounded lightweight parent execution permitted; route remains recommendation only"
-        )
+    elif compatibility["parent_reuse_allowed"]:
+        dispatch_reason = "the current parent matches the route and has adequate effort"
         requested = Route(
             "parent_execution", args.parent_model, args.parent_effort, route.score,
             dispatch_reason,
@@ -412,7 +319,6 @@ def main() -> int:
         "parent_reused": False,
         "status": status,
         "escalation_required": child_guard["escalation_required"],
-        "lightweight_reuse": reuse,
         "blocker_kind": blocker_kind,
         "attempt_index": len(failure_kinds) + 1,
         "failure_kind": failure_kinds[-1] if failure_kinds else None,

@@ -30,7 +30,7 @@ else:
 for required_phrase in (
     f"Codex Quota Router {ROUTE_VERSION}",
     "Recommended routes are not proof of execution",
-    "Lightweight reuse is opt-in",
+    "Only these two models are allowed",
     "runtime evidence",
     "execution failure is a blocker",
     "quality_first",
@@ -49,9 +49,7 @@ required = [
     "scripts/run_tests.py",
     "tests/test_route_score.py",
     "snippets/AGENTS.global.md",
-    "agents/luna-fast.toml",
-    "agents/luna-worker.toml",
-    "agents/luna-deep.toml",
+    "agents/sol-fast.toml",
     "agents/sol-resolver.toml",
     "agents/sol-guard.toml",
     "agents/sol-architect.toml",
@@ -72,12 +70,19 @@ active_files = [
     root / "scripts" / "run_tests.py",
 ]
 active_text = "\n".join(path.read_text(encoding="utf-8") for path in active_files if path.is_file()).lower()
-for obsolete in ("model_availability.py", "--luna-unavailable", "--luna-available", "probe_luna", "start_unknown", "use_fallback"):
+for obsolete in (
+    "gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra", "model_availability.py",
+    "--allow-lightweight-reuse", "--luna-unavailable", "--luna-available",
+    "probe_luna", "start_unknown", "use_fallback",
+):
     if obsolete in active_text:
         errors.append(f"active router references retired availability policy: {obsolete}")
 
 if (root / "VERSION").read_text(encoding="utf-8").strip() != ROUTE_VERSION:
     errors.append(f"VERSION does not match route_version {ROUTE_VERSION}")
+
+if set(MODEL_EFFORTS) != {"gpt-6.2-sol", "gpt-6.2-astra"}:
+    errors.append("router model allowlist must contain only GPT-6.2 Sol and Astra")
 
 for path in (
     skill,
@@ -96,16 +101,13 @@ for path in (
 if tomllib:
     try:
         config = tomllib.loads((root / "snippets" / "config.toml").read_text(encoding="utf-8"))
-        if "max_concurrent_threads_per_session" in config.get("agents", {}):
-            errors.append("snippets/config.toml must not impose a worker-count cap")
+        if config != {"model": "gpt-6.2-sol", "model_reasoning_effort": "medium"}:
+            errors.append("snippets/config.toml must set only the Sol Medium root defaults")
     except Exception as exc:
         errors.append(f"invalid snippets/config.toml: {exc}")
 
-if tomllib:
     expected_models = {
-        "luna-fast.toml": ("gpt-6-luna", "low"),
-        "luna-worker.toml": ("gpt-6-luna", "medium"),
-        "luna-deep.toml": ("gpt-6-luna", "high"),
+        "sol-fast.toml": ("gpt-6.2-sol", "low"),
         "sol-resolver.toml": ("gpt-6.2-sol", "medium"),
         "sol-guard.toml": ("gpt-6.2-sol", "high"),
         "sol-architect.toml": ("gpt-6.2-astra", "medium"),
@@ -124,7 +126,9 @@ if tomllib:
         if data.get("model_reasoning_effort") in {"xhigh", "max", "ultra"}:
             errors.append(f"{path.name} violates tight budget effort policy")
         if (data.get("model"), data.get("model_reasoning_effort")) != expected_models.get(path.name):
-            errors.append(f"{path.name} does not match the GPT-6 routing profile")
+            errors.append(f"{path.name} does not match a managed model profile")
+        if path.name == "sol-architect.toml" and data.get("sandbox_mode") != "read-only":
+            errors.append("Astra architecture role must be read-only")
 
 if errors:
     print("VALIDATION FAILED")

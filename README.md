@@ -1,16 +1,13 @@
-# Codex Quota Router 1.6.0
+# Codex Quota Router 1.7.0
 
 [中文](README.md) | [English](README_EN.md)
 
-<p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
-
-为 OpenAI Codex 工作流提供可审计的模型路由建议：默认按任务匹配 GPT-6 Luna，风险和隐藏耦合任务使用 GPT-6.2 Sol，少数只读架构规划使用 GPT-6.2 Astra。路由建议不代表当前线程已切换模型，也不代表目标模型已经执行。
+为 OpenAI Codex 工作流提供可审计的路由建议，仅允许 GPT-6.2 Sol 和 GPT-6.2 Astra。路由建议不代表当前线程已切换模型，也不代表目标模型已经执行。
 
 | 模型 | 职责 |
 | --- | --- |
-| Luna | 默认执行；按任务选择 Low、Medium 或 High |
-| Sol | 高风险门槛、隐藏耦合与推理升级 |
-| Astra | 少量只读架构规划与根因诊断 |
+| GPT-6.2 Sol | 默认执行；按任务选择 Low、Medium 或 High |
+| GPT-6.2 Astra | 少量只读架构规划与根因诊断 |
 
 ## 策略
 
@@ -24,11 +21,9 @@
 
 | 模型 | 支持的 effort |
 | --- | --- |
-| `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `gpt-6.2-sol`、`gpt-6.2-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
-| `gpt-6.1-sol`、`gpt-6-astra`（仅手动指定） | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 
-默认路由保留六个角色和原有 effort。已匹配模型且 effort 足够的父线程可直接工作；用户指定的 effort 必须精确匹配。旧模型不会被自动选用，也不满足当前 Sol High 硬门槛。手动指定的模型和 effort 仍取决于执行端是否支持，并非可用性承诺。
+默认路由有四个角色。模型相同且 effort 足够的父线程可直接工作；明确指定的 effort 必须精确匹配。不允许用其他模型替代，也不允许显式选择名单外的模型。有效选择仍取决于执行端是否支持。
 
 ## 安装
 
@@ -45,7 +40,9 @@ chmod +x install.sh
 ./install.sh
 ```
 
-若不希望修改全局路由文件，Windows 使用 `-SkipGlobalAutoRouting`，Linux/macOS 使用 `SKIP_GLOBAL_AUTO_ROUTING=1`。安装完成后重启 Codex。
+安装器会将其管理的旧角色移出 `~/.codex/agents`，归档到 `~/.codex/codex-quota-router-retired/`，不改变供应商或帐户权限。若不希望修改全局路由文件，Windows 使用 `-SkipGlobalAutoRouting`，Linux/macOS 使用 `SKIP_GLOBAL_AUTO_ROUTING=1`。安装完成后重启 Codex。
+
+两模型限制作用于本 Skill 和它管理的角色，安装器不会修改模型选择器、外部模型目录或 `config.toml`。升级后，旧版跨模型复用参数及记录字段不再适用。
 
 ## 验证
 
@@ -64,4 +61,4 @@ python scripts/run_tests.py
 - `references/execution-contract.md`：执行状态与失败处理。
 - `references/routing-policy.md`：策略、评分、努力级别与风险硬门槛。
 - `scripts/route_score.py`：确定性路由评分与策略校验。
-- `agents/*.toml`：默认六个模型与 effort 配置。
+- `agents/*.toml`：四个默认角色的模型与 effort 配置。

@@ -1,28 +1,25 @@
 ---
 name: codex-quota-router
-description: Route substantive Codex development and maintenance to a quota-appropriate model and effort, honoring explicit choices and reporting actual execution separately.
+description: Route substantive Codex development and maintenance to GPT-6.2 Sol or GPT-6.2 Astra, choosing effort by task risk and reporting actual execution separately.
 ---
 
-# Codex Quota Router 1.6.0
+# Codex Quota Router 1.7.0
 
 Optimize for correct completion per unit of time and quota. Honor explicit model, effort, and workflow choices; never silently downgrade the requested workflow. Recommended routes are not proof of execution.
 
 ## Route
 
-- Default to GPT-6 Luna: Low for mechanical edits, Medium for ordinary bounded work, High for nontrivial bounded integration.
-- Use GPT-6.2 Sol High first for data integrity, auth/security, concurrency, destructive, or production risk; use Sol Medium for hidden coupling, unclear ownership, or reasoning escalation.
-- Use GPT-6.2 Astra Medium rarely, for bounded read-only architecture/root-cause planning. The six role names and their default efforts stay unchanged.
+- Default to GPT-6.2 Sol: Low for mechanical edits, Medium for ordinary work and bounded integration, High for high complexity or hard risk (data, auth/security, concurrency, destructive, or production work).
+- Use GPT-6.2 Astra Medium rarely, for bounded read-only architecture/root-cause planning; route implementation to Sol. Only these two models are allowed.
 - File count alone does not justify an upgrade. Use `references/routing-policy.md` for scoring and gates.
 - Default to the `balanced` policy. `quality_first` promotes ordinary routes by one tier; explicit high-risk and read-only architecture routes remain governed by their hard gates. `route_only` returns a recommendation without dispatch.
 
 ## Execute
 
-- A parent with the selected model and adequate effort should execute directly unless the user requires delegation. An explicit effort must match exactly. Otherwise delegate unless the opt-in lightweight rule below applies. Do not claim the recommended model executed when a different parent performed the work.
-- Lightweight reuse is opt-in for cross-model execution and ordinarily limited to Luna recommendations with a Luna or GPT-6.2 Sol parent, adequate effort, and either at most two known changed files or one established read-only/reversible command. It cannot bypass score-based Sol routes. Exact model/effort, migrations, auth, payments, concurrency, unclear/destructive operations, production changes, and other hard risk gates are excluded. The sole destructive exception is a user-authorized, established cache cleanup with a prevalidated whitelist, no reparse-point traversal, and locked files skipped; this does not relax those safeguards. Delegated workers never dispatch descendants.
-- The route helper allows cross-model reuse only with `--allow-lightweight-reuse` and boundedness evidence. Read `references/execution-contract.md` for result fields.
-- Explicit efforts are validated against the model matrix. Older Sol/Astra IDs are accepted only as explicit choices, never as automatic fallbacks. Unknown models, unsupported combinations, and exact choices that conflict with a Sol High hard-risk gate fail clearly. A valid choice still requires host support.
+- A parent with the selected model and adequate effort should execute directly unless the user requires delegation. An explicit effort must match exactly. Do not substitute a different model. Delegated workers never dispatch descendants.
+- Explicit choices outside the two-model allowlist, unsupported effort combinations, and exact choices that conflict with a Sol High hard-risk gate fail clearly. A valid choice still requires host support. A route is not permission to perform risky or destructive operations.
 - Only reasoning- and logic-related failures affect the route score. Dependency, permission, test, network, and user-input failures are recorded but do not trigger reasoning escalation.
-- Execution failure is a blocker; no availability preflight or automatic Sol fallback is performed. Sol is selected by risk/complexity gates or `quality_first`; Astra remains rare planning.
+- Execution failure is a blocker; do not run availability preflights or fall back to another model.
 - Report route, dispatch, runtime verification, and completion as separate facts. Set effective model/effort only with runtime evidence. Reuse exact validation already performed and returned by a worker.
 - Record a unique `decision_id`, route version, policy mode, attempt index, typed failure kinds, worker count, reasoning escalation count, verification reuse, and blocker kind for each route decision.
 - Honor `subagents=deny` by executing in the current parent only when its model/effort can satisfy the route; otherwise return the recommendation as blocked/route-only without claiming dispatch.
@@ -35,7 +32,7 @@ Archive completed children only through official APIs. Wrapper archival is optio
 
 ## References
 
-- `references/routing-policy.md`: scoring, risk gates, and lightweight eligibility.
+- `references/routing-policy.md`: scoring, risk gates, and allowed models.
 - `references/execution-contract.md`: overrides, parent reuse, dispatch, and truthful status.
 - `references/scenarios.md`: representative routes and exceptions.
 - `references/task-packet.md`: concise packet template when delegation is warranted.
