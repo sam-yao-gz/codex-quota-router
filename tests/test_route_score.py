@@ -47,10 +47,10 @@ def test_balanced_routes_preserve_existing_score_bands():
 
 def test_risk_gates_and_architecture_gate_order():
     selected = route((2, 3, 3, 3, 2), {"architecture"})
-    assert (selected.agent, selected.model, selected.effort) == ("sol_architect", "gpt-6-astra", "medium")
+    assert (selected.agent, selected.model, selected.effort) == ("sol_architect", "gpt-6.2-astra", "medium")
 
     critical = route((2, 3, 3, 4, 2), {"architecture", "migration"})
-    assert (critical.agent, critical.model, critical.effort) == ("sol_guard", "gpt-6.1-sol", "high")
+    assert (critical.agent, critical.model, critical.effort) == ("sol_guard", "gpt-6.2-sol", "high")
 
     explicit_luna = cli_error(
         "--explicit-model", "gpt-6-luna", "--flag", "migration", *BASE_ARGS,
@@ -58,15 +58,20 @@ def test_risk_gates_and_architecture_gate_order():
     assert explicit_luna.returncode != 0
     assert "conflicts with Sol High hard-risk gate" in explicit_luna.stderr
     explicit_sol_low = cli_error(
-        "--explicit-model", "gpt-6.1-sol", "--explicit-effort", "low",
+        "--explicit-model", "gpt-6.2-sol", "--explicit-effort", "low",
         "--flag", "migration", *BASE_ARGS,
     )
     assert explicit_sol_low.returncode != 0
     explicit_sol_high = route_cli(
-        "--explicit-model", "gpt-6.1-sol", "--explicit-effort", "high",
+        "--explicit-model", "gpt-6.2-sol", "--explicit-effort", "high",
         "--flag", "migration", *BASE_ARGS,
     )
-    assert explicit_sol_high["requested_model"] == "gpt-6.1-sol"
+    assert explicit_sol_high["requested_model"] == "gpt-6.2-sol"
+    legacy_sol_high = cli_error(
+        "--explicit-model", "gpt-6.1-sol", "--explicit-effort", "high", "--flag", "migration", *BASE_ARGS,
+    )
+    assert legacy_sol_high.returncode != 0
+    assert "conflicts with Sol High hard-risk gate" in legacy_sol_high.stderr
     assert explicit_sol_high["requested_effort"] == "high"
 
 
@@ -77,7 +82,7 @@ def test_sensitive_and_unknown_deletion_flags_select_sol_high():
     )
     for flag in flags:
         selected = route((0, 0, 0, 0, 0), {flag})
-        assert (selected.agent, selected.model, selected.effort) == ("sol_guard", "gpt-6.1-sol", "high")
+        assert (selected.agent, selected.model, selected.effort) == ("sol_guard", "gpt-6.2-sol", "high")
 
 
 def test_profile_models_match_every_active_route():
@@ -89,7 +94,7 @@ def test_profile_models_match_every_active_route():
         ((0, 1, 1, 2, 0), {"migration"}),
         ((2, 3, 3, 3, 2), {"architecture"}),
     ]
-    expected_models = {"gpt-6-luna", "gpt-6.1-sol", "gpt-6-astra"}
+    expected_models = {"gpt-6-luna", "gpt-6.2-sol", "gpt-6.2-astra"}
     for values, flags in cases:
         selected = route(values, flags)
         profile = MODULE_PATH.parents[1] / "agents" / (selected.agent.replace("_", "-") + ".toml")
@@ -104,8 +109,8 @@ def test_quality_first_promotes_each_ordinary_route_once():
     cases = [
         ((0, 0, 0, 0, 0), ("luna_worker", "gpt-6-luna", "medium")),
         ((0, 1, 1, 1, 0), ("luna_deep", "gpt-6-luna", "high")),
-        ((1, 2, 2, 2, 0), ("sol_resolver", "gpt-6.1-sol", "medium")),
-        ((2, 3, 3, 3, 0), ("sol_guard", "gpt-6.1-sol", "high")),
+        ((1, 2, 2, 2, 0), ("sol_resolver", "gpt-6.2-sol", "medium")),
+        ((2, 3, 3, 3, 0), ("sol_guard", "gpt-6.2-sol", "high")),
     ]
     for values, expected in cases:
         selected = module.apply_quality_first(route(values))
@@ -128,7 +133,7 @@ def test_failure_kinds_only_reasoning_and_logic_affect_score_and_escalation():
     reasoning = route((0, 1, 1, 1, 0), failures=("reasoning",))
     logic = route((0, 1, 1, 1, 0), failures=("logic",))
     assert reasoning.score == logic.score == baseline.score + 1
-    assert route((0, 0, 0, 0, 0), {"architecture"}, ("reasoning",)).model == "gpt-6-astra"
+    assert route((0, 0, 0, 0, 0), {"architecture"}, ("reasoning",)).model == "gpt-6.2-astra"
 
 
 def test_unknown_flags_and_failure_kinds_are_rejected():
@@ -176,7 +181,7 @@ def test_retired_luna_phrases_are_ignored_and_removed_cli_options_rejected():
         "--user-input", "disable Luna; Use Luna only",
         "--flag", "migration", *BASE_ARGS,
     )
-    assert ordinary["route_model"] == "gpt-6.1-sol"
+    assert ordinary["route_model"] == "gpt-6.2-sol"
     assert ordinary["policy_mode"] == "balanced"
 
     for retired in ("--disable-luna", "--use-luna-only", "--failed-attempts"):
@@ -212,6 +217,27 @@ def test_no_subagents_allows_matching_parent_execution_without_claiming_executio
     assert result["worker_count"] == 0
 
 
+def test_matching_parent_is_recommended_without_duplicate_dispatch():
+    args = ("--flag", "idempotency", "--parent-model", "gpt-6.2-sol", "--parent-effort", "high", *BASE_ARGS)
+    result = route_cli(*args)
+    assert (result["route_model"], result["route_effort"]) == ("gpt-6.2-sol", "medium")
+    assert (result["requested_model"], result["requested_effort"]) == ("gpt-6.2-sol", "high")
+    assert result["parent_execution_allowed"] and not result["dispatch_allowed"]
+    assert result["dispatch_action"] == "direct_parent_execution_allowed"
+    assert not result["parent_reused"] and result["worker_count"] == 0
+    assert result["effective_model"] is None and result["effective_effort"] is None
+    assert not route_cli("--policy", "route_only", *args)["parent_execution_allowed"]
+    assert not route_cli("--delegated-worker", *args)["dispatch_allowed"]
+
+
+def test_matching_parent_does_not_override_an_exact_effort():
+    args = ("--explicit-effort", "low", "--parent-model", "gpt-6-luna", *BASE_ARGS)
+    higher = route_cli("--parent-effort", "high", *args)
+    assert higher["dispatch_allowed"] and not higher["parent_execution_allowed"]
+    exact = route_cli("--parent-effort", "low", *args)
+    assert not exact["dispatch_allowed"] and exact["parent_execution_allowed"]
+
+
 def test_natural_no_subagents_and_conflicting_explicit_choice():
     natural = route_cli("--user-input", "Do not use subagents", *BASE_ARGS)
     assert natural["subagents_policy"] == "deny"
@@ -229,35 +255,36 @@ def test_parent_compatibility_requires_same_model_and_sufficient_effort():
     target = route((1, 2, 2, 2, 0))
     assert module.parent_compatibility("gpt-6-luna", "high", target)["parent_reuse_allowed"]
     assert not module.parent_compatibility("gpt-6-luna", "medium", target)["parent_reuse_allowed"]
-    assert not module.parent_compatibility("gpt-6.1-sol", "high", target)["parent_reuse_allowed"]
+    assert not module.parent_compatibility("gpt-6.2-sol", "high", target)["parent_reuse_allowed"]
 
 
 def test_lightweight_reuse_is_opt_in_and_does_not_claim_execution():
     args = [
         "--clarity", "1", "--scope", "2", "--coupling", "1", "--risk", "1", "--novelty", "1",
-        "--parent-model", "gpt-6.1-sol", "--parent-effort", "high",
+        "--parent-model", "gpt-6.2-sol", "--parent-effort", "high",
     ]
     ordinary = route_cli(*args)
     assert ordinary["dispatch_action"] == "delegate_allowed"
     reused = route_cli("--allow-lightweight-reuse", "--file-count", "2", *args)
     assert reused["dispatch_action"] == "direct_parent_execution_allowed"
     assert reused["route_model"] == "gpt-6-luna"
-    assert reused["requested_model"] == "gpt-6.1-sol" and reused["requested_effort"] == "high"
+    assert reused["requested_model"] == "gpt-6.2-sol" and reused["requested_effort"] == "high"
     assert reused["effective_model"] is None
     assert reused["parent_execution_allowed"] is True
+    assert reused["dispatch_allowed"] is False
     assert reused["parent_reused"] is False
 
 
 def test_lightweight_reuse_keeps_scope_effort_and_high_risk_safeguards():
     target = route((1, 2, 2, 2, 0))
-    assert not module.lightweight_reuse_decision(target, "gpt-6.1-sol", "high", enabled=True)["eligible"]
+    assert not module.lightweight_reuse_decision(target, "gpt-6.2-sol", "high", enabled=True)["eligible"]
     assert not module.lightweight_reuse_decision(
-        target, "gpt-6.1-sol", "medium", enabled=True, file_count=2,
+        target, "gpt-6.2-sol", "medium", enabled=True, file_count=2,
     )["eligible"]
     high_risk = route((2, 3, 3, 2, 1))
-    assert high_risk.model == "gpt-6.1-sol"
+    assert high_risk.model == "gpt-6.2-sol"
     assert not module.lightweight_reuse_decision(
-        high_risk, "gpt-6.1-sol", "high", enabled=True, file_count=2,
+        high_risk, "gpt-6.2-sol", "high", enabled=True, file_count=2,
     )["eligible"]
 
 
@@ -269,7 +296,7 @@ def test_validated_cache_cleanup_remains_explicit():
         "--clarity", "1", "--scope", "1", "--coupling", "1", "--risk", "4", "--novelty", "0",
     ]
     result = route_cli(*args)
-    assert result["route_model"] == "gpt-6.1-sol" and result["route_effort"] == "high"
+    assert result["route_model"] == "gpt-6.2-sol" and result["route_effort"] == "high"
     assert result["dispatch_action"] == "direct_parent_execution_allowed"
     assert result["requested_model"] == "gpt-6-luna"
 
@@ -296,6 +323,8 @@ def test_delegated_worker_cannot_dispatch_descendant():
 def test_explicit_model_effort_matrix_and_rejection():
     expected_efforts = {
         "gpt-6-luna": {"none", "low", "medium", "high", "xhigh", "max"},
+        "gpt-6.2-sol": {"low", "medium", "high", "xhigh", "max", "ultra"},
+        "gpt-6.2-astra": {"low", "medium", "high", "xhigh", "max", "ultra"},
         "gpt-6.1-sol": {"low", "medium", "high", "xhigh", "max", "ultra"},
         "gpt-6-astra": {"low", "medium", "high", "xhigh", "max", "ultra"},
     }
@@ -303,7 +332,7 @@ def test_explicit_model_effort_matrix_and_rejection():
     for model, efforts in module.MODEL_EFFORTS.items():
         for effort in efforts:
             module.validate_model_effort(model, effort)
-    for model, effort in (("gpt-6.1-sol", "none"), ("gpt-6-astra", "none"), ("gpt-6-luna", "invalid")):
+    for model, effort in (("gpt-6.2-sol", "none"), ("gpt-6.2-astra", "none"), ("gpt-6-luna", "invalid")):
         try:
             module.validate_model_effort(model, effort)
         except ValueError:
@@ -311,20 +340,32 @@ def test_explicit_model_effort_matrix_and_rejection():
         else:
             raise AssertionError(f"unsupported effort accepted for {model}: {effort}")
 
-    exact = route_cli("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "low", *BASE_ARGS)
-    assert exact["route_model"] == exact["requested_model"] == "gpt-6.1-sol"
+    exact = route_cli("--explicit-model", "gpt-6.2-sol", "--explicit-effort", "low", *BASE_ARGS)
+    assert exact["route_model"] == exact["requested_model"] == "gpt-6.2-sol"
     assert exact["route_effort"] == exact["requested_effort"] == "low"
     assert exact["dispatch_action"] == "delegate_allowed"
-    ultra = route_cli("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "ultra", *BASE_ARGS)
-    assert ultra["requested_model"] == "gpt-6.1-sol"
+    ultra = route_cli("--explicit-model", "gpt-6.2-astra", "--explicit-effort", "ultra", *BASE_ARGS)
+    assert ultra["requested_model"] == "gpt-6.2-astra"
     assert ultra["requested_effort"] == "ultra"
 
     unknown = cli_error("--explicit-model", "gpt-5.6", *BASE_ARGS)
     assert unknown.returncode != 0 and "invalid choice" in unknown.stderr
-    unsupported = cli_error("--explicit-model", "gpt-6.1-sol", "--explicit-effort", "none", *BASE_ARGS)
+    unsupported = cli_error("--explicit-model", "gpt-6.2-sol", "--explicit-effort", "none", *BASE_ARGS)
     assert unsupported.returncode != 0 and "unsupported explicit model/effort combination" in unsupported.stderr
     luna_none = route_cli("--explicit-effort", "none", *BASE_ARGS)
     assert luna_none["requested_model"] == "gpt-6-luna" and luna_none["requested_effort"] == "none"
+
+
+def test_legacy_models_are_explicit_only():
+    for model in ("gpt-6.1-sol", "gpt-6-astra"):
+        exact = route_cli("--explicit-model", model, "--explicit-effort", "medium", *BASE_ARGS)
+        assert exact["requested_model"] == model
+        ordinary = route_cli(
+            "--parent-model", model, "--parent-effort", "high", "--allow-lightweight-reuse", "--file-count", "1",
+            *BASE_ARGS,
+        )
+        assert ordinary["route_model"] == "gpt-6-luna"
+        assert not ordinary["parent_execution_allowed"]
 
 
 def test_audit_fields_are_truthful_and_attempt_index_counts_prior_failures():
@@ -333,7 +374,7 @@ def test_audit_fields_are_truthful_and_attempt_index_counts_prior_failures():
         "--failure-kind", "logic", "--failure-kind", "test", *BASE_ARGS,
     )
     assert uuid.UUID(result["decision_id"])
-    assert result["route_version"] == "1.5.0"
+    assert result["route_version"] == "1.6.0"
     assert result["policy_mode"] == "balanced"
     assert result["attempt_index"] == 5
     assert result["failure_kind"] == "test"

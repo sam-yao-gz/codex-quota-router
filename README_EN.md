@@ -1,10 +1,10 @@
-# Codex Quota Router 1.5.0
+# Codex Quota Router 1.6.0
 
 [中文](README.md) | **English**
 
 <p align="center"><img src="assets/codex-quota-router-hero.png" alt="Codex Quota Router model routing overview"></p>
 
-Auditable model-routing recommendations for OpenAI Codex workflows: GPT-6 Luna by task, GPT-6.1 Sol for risk gates and hidden coupling, and GPT-6 Astra for rare read-only architecture planning. A recommendation does not switch the running thread's model or prove that the target model executed.
+Auditable model-routing recommendations for OpenAI Codex workflows: GPT-6 Luna by task, GPT-6.2 Sol for risk gates and hidden coupling, and GPT-6.2 Astra for rare read-only architecture planning. A recommendation does not switch the running thread's model or prove that the target model executed.
 
 | Model | Responsibility |
 | --- | --- |
@@ -20,15 +20,15 @@ Auditable model-routing recommendations for OpenAI Codex workflows: GPT-6 Luna b
 - `subagents=auto|allow|deny`: control delegation separately; with `deny`, execute directly only if the current parent satisfies the selected route.
 - Honor explicit model and effort choices. Validate effort against each model's capabilities; reject unknown models, combinations, and flags rather than silently downgrading. If an exact choice conflicts with a Sol High hard-risk gate, return a conflict instead of weakening the gate.
 
-Explicit effort levels exposed by the current Codex host:
+Model and effort combinations accepted by the offline router:
 
 | Model | Supported effort |
 | --- | --- |
 | `gpt-6-luna` | `none`, `low`, `medium`, `high`, `xhigh`, `max` |
-| `gpt-6.1-sol` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
-| `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6.2-sol`, `gpt-6.2-astra` | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
+| `gpt-6.1-sol`, `gpt-6-astra` (explicit only) | `low`, `medium`, `high`, `xhigh`, `max`, `ultra` |
 
-Default routing continues to use the six installed agent profiles. Higher explicit effort applies only when the execution mechanism supports and actually passes it through.
+Default routing keeps the same six roles and default efforts. A parent on the selected model can act directly with adequate effort; explicit effort must match exactly. Older models are never selected automatically and do not satisfy the current Sol High hard-risk gate. Explicit choices still require support from the execution host.
 
 ## Installation
 

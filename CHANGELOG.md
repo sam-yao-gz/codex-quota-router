@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## [1.6.0] - 2026-11-19
+
+- Use GPT-6.2 Sol for escalation and hard-risk gates and GPT-6.2 Astra for read-only planning. Keep GPT-6 Luna and the six role names and default efforts unchanged.
+- Keep the previous Sol/Astra model IDs for explicit compatible requests only. Do not fall back to them automatically.
+- Reuse an adequate same-model parent without scheduling a duplicate worker; keep recommendation and execution evidence separate.
+
 ## [1.5.0] - 2026-11-09
 
 ### Added
